@@ -331,19 +331,31 @@ pub fn run(request: RunRequest<'_>) -> RunResult {
         );
 
         // server rewind: resolve the shot against the world the firing client was
-        // looking at, bounded so high latency cannot rewind arbitrarily far
+        // looking at, bounded so high latency cannot rewind arbitrarily far.
+        //
+        // The shot is judged by comparing the server's state at the rewound tick
+        // against the state the client was drawing when it fired, which is its newest
+        // received sample. Comparing against the client's *predicted* position instead
+        // would measure how far ahead prediction had run, so rewinding further back
+        // would widen the gap and a longer limit would register fewer hits, which is
+        // the opposite of what the technique does.
         if fired_this_tick && tick >= WARMUP_TICKS {
             shots_fired += 1;
+            let aimed_at = received_states.latest();
             if techniques.server_rewind {
-                let viewed = received_states.latest().map_or(tick, |s| s.tick);
+                let viewed = aimed_at.map_or(tick, |s| s.tick);
                 let target = rewind_target_tick(tick, viewed, rewind_ticks);
-                if let Some(at) = server_history.at_or_before(target) {
-                    if distance(at.body, client.body) <= scenario.hit_tolerance() {
+                if let (Some(at), Some(seen)) = (server_history.at_or_before(target), aimed_at) {
+                    if distance(at.body, seen.body) <= scenario.hit_tolerance() {
                         shots_confirmed += 1;
                     }
                 }
-            } else if distance(server.body, client.body) <= scenario.hit_tolerance() {
-                shots_confirmed += 1;
+            } else if let Some(seen) = aimed_at {
+                // with rewind off the server judges against its current state, so a
+                // client far behind it misses regardless of where it was aiming
+                if distance(server.body, seen.body) <= scenario.hit_tolerance() {
+                    shots_confirmed += 1;
+                }
             }
         }
 
@@ -1417,33 +1429,110 @@ mod tests {
         }
     }
 
+    /// A scenario that fires repeatedly, so hit registration is measured over a run of
+    /// shots rather than read off a single outcome.
+    ///
+    /// A single shot made the original version of the oracle below vacuous: both
+    /// limits confirmed zero hits, so `0 >= 0` passed while the underlying property
+    /// was actually inverted.
+    fn firing_scenario(ticks: u32, shots: u32) -> Scenario {
+        let mut scenario = moving_scenario(64, ticks);
+        for i in 0..shots {
+            scenario.input_script.push(InputEvent {
+                tick: WARMUP_TICKS + 20 + i * 20,
+                entity_id: 0,
+                action: InputAction::Fire {
+                    dir_x: from_int(1),
+                    dir_y: Fx::ZERO,
+                },
+            });
+        }
+        scenario.sort_inputs();
+        scenario
+    }
+
     /// Oracle 3: a longer rewind limit cannot register fewer hits.
+    ///
+    /// This is the technique's entire purpose, so a violation means the model is
+    /// backwards rather than merely tuned differently.
     #[test]
     fn a_longer_rewind_limit_never_lowers_hit_registration() {
-        let mut scenario = moving_scenario(64, 300);
-        scenario.input_script.push(InputEvent {
-            tick: 150,
-            entity_id: 0,
-            action: InputAction::Fire {
-                dir_x: from_int(1),
-                dir_y: Fx::ZERO,
-            },
-        });
-        scenario.sort_inputs();
+        let scenario = firing_scenario(400, 16);
 
-        let short = NetcodeConfig {
-            techniques: TechniqueSet::ALL,
-            server_rewind_limit_ms: 20,
-            ..NetcodeConfig::default()
+        let confirmed = |limit_ms: u32| {
+            run_config(
+                &scenario,
+                NetworkSegment::transcontinental(),
+                4,
+                NetcodeConfig {
+                    techniques: TechniqueSet::ALL,
+                    server_rewind_limit_ms: limit_ms,
+                    ..NetcodeConfig::default()
+                },
+            )
+            .metrics
+            .shots_confirmed
         };
-        let long = NetcodeConfig {
-            techniques: TechniqueSet::ALL,
-            server_rewind_limit_ms: 400,
-            ..NetcodeConfig::default()
+
+        let short = confirmed(20);
+        let long = confirmed(400);
+        assert!(
+            long >= short,
+            "a 400 ms rewind confirmed {long} shots against {short} at 20 ms, \
+             so a longer limit is registering fewer hits"
+        );
+    }
+
+    /// The oracle above only means something when shots actually register. Held apart
+    /// so a change that silently drove every outcome to zero fails here rather than
+    /// leaving the comparison trivially true.
+    #[test]
+    fn the_rewind_oracle_is_not_vacuous() {
+        let scenario = firing_scenario(400, 16);
+        let result = run_config(
+            &scenario,
+            NetworkSegment::transcontinental(),
+            4,
+            NetcodeConfig {
+                techniques: TechniqueSet::ALL,
+                server_rewind_limit_ms: 400,
+                ..NetcodeConfig::default()
+            },
+        );
+        assert_eq!(result.metrics.shots_fired, 16);
+        assert!(
+            result.metrics.shots_confirmed > 0,
+            "no shot registered at any limit, so the oracle compares zero against zero"
+        );
+    }
+
+    /// Rewind has to buy something on a link with real latency, or the technique is
+    /// costing complexity for nothing.
+    #[test]
+    fn rewind_registers_more_hits_than_no_rewind() {
+        let scenario = firing_scenario(400, 16);
+        let confirmed = |rewind: bool| {
+            run_config(
+                &scenario,
+                NetworkSegment::transcontinental(),
+                4,
+                NetcodeConfig {
+                    techniques: TechniqueSet {
+                        server_rewind: rewind,
+                        ..TechniqueSet::ALL
+                    },
+                    ..NetcodeConfig::default()
+                },
+            )
+            .metrics
+            .shots_confirmed
         };
-        let a = run_config(&scenario, NetworkSegment::transcontinental(), 4, short);
-        let b = run_config(&scenario, NetworkSegment::transcontinental(), 4, long);
-        assert!(b.metrics.shots_confirmed >= a.metrics.shots_confirmed);
+        assert!(
+            confirmed(true) > confirmed(false),
+            "rewind confirmed {} shots against {} without it",
+            confirmed(true),
+            confirmed(false)
+        );
     }
 
     /// Oracle 4, the Gambetta cross-check: with prediction on but reconciliation off,

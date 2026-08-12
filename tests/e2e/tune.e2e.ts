@@ -228,20 +228,27 @@ test("every route in the bar is reachable", async ({ page }) => {
 });
 
 /**
- * A route that is planned but not built must say so rather than rendering a
- * convincing empty page, which would read as a feature that works and returns
- * nothing.
+ * Every route in the navigation now renders its own surface.
+ *
+ * This replaces a check that the unbuilt routes said so. Kept rather than deleted,
+ * because the property it guards is the same one: a route in the nav must never be a
+ * convincing empty page, and the placeholder it used to show must not come back.
  */
-test("routes that are not built say so", async ({ page }) => {
-  await page.goto("/#/scenarios");
-  await expect(page.getByTestId("not-built")).toBeVisible();
-  await expect(page.getByTestId("not-built")).toContainText("Not built yet");
+test("every route in the navigation is built", async ({ page }) => {
+  for (const [path, marker] of [
+    ["/#/scenarios", "read-only"],
+    ["/#/verify", "oracle-verdict"],
+  ] as const) {
+    await page.goto(path);
+    await expect(page.getByTestId(marker)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("not-built")).toHaveCount(0);
+  }
 });
 
-test.describe("mobile", () => {
-  test.use({ viewport: { width: 375, height: 812 } });
+test.describe("at the narrow end of the supported range", () => {
+  test.use({ viewport: { width: 760, height: 900 } });
 
-  test("the page does not scroll sideways at phone width", async ({ page }) => {
+  test("the page does not scroll sideways", async ({ page }) => {
     await ready(page);
     await runSweep(page);
 
@@ -251,11 +258,11 @@ test.describe("mobile", () => {
     expect(overflows, "the page itself must not scroll sideways").toBe(false);
   });
 
-  test("the run control stays on screen at phone width", async ({ page }) => {
+  test("the run control stays on screen", async ({ page }) => {
     await ready(page);
     const box = await page.getByTestId("run-sweep").boundingBox();
     expect(box).not.toBeNull();
     expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
-    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(375);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(760);
   });
 });

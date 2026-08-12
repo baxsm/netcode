@@ -140,35 +140,38 @@ pub fn segment_names() -> String {
     boundary::SEGMENT_NAMES.join("\t")
 }
 
+/// Number of values in the scenario buffer the run functions take.
+#[wasm_bindgen]
+pub fn scenario_len() -> u32 {
+    boundary::SCENARIO_LEN as u32
+}
+
+/// Values per event in the input script buffer: tick, action tag, then the two
+/// direction components.
+#[wasm_bindgen]
+pub fn script_stride() -> u32 {
+    boundary::SCRIPT_STRIDE as u32
+}
+
 /// Runs one simulation and returns its metrics as a flat buffer. Field order is the
 /// contract with the TypeScript mirror, held together by a test.
-#[allow(clippy::too_many_arguments)]
+///
+/// The scenario and the input script cross as buffers rather than as positional
+/// arguments. Spread out they would push this past twenty parameters, where two
+/// transposed numbers still compile and quietly simulate something else. An empty
+/// script runs the built-in move-then-stop shape.
 #[wasm_bindgen]
 pub fn run_metrics(
     seed: u64,
     segment_index: u32,
-    tick_rate: u32,
-    duration_ticks: u32,
-    accel: i32,
-    max_speed: i32,
-    friction_permille: u32,
-    bounds: i32,
-    move_from_tick: u32,
-    stop_at_tick: u32,
+    scenario: Vec<f64>,
+    script: Vec<f64>,
     config: Vec<f64>,
 ) -> Vec<f64> {
-    let scenario = boundary::build_scenario(&boundary::BuildScenario {
-        tick_rate,
-        duration_ticks,
-        accel,
-        max_speed,
-        friction_permille,
-        bounds,
-        move_from_tick,
-        stop_at_tick,
-    });
+    let built =
+        boundary::build_scenario_with_script(&boundary::scenario_from_buffer(&scenario), &script);
     boundary::metrics_buffer(
-        &scenario,
+        &built,
         boundary::segment_by_index(segment_index),
         seed,
         boundary::config_from_buffer(&config),
@@ -180,14 +183,8 @@ pub fn run_metrics(
 #[wasm_bindgen]
 pub fn run_metrics_custom(
     seed: u64,
-    tick_rate: u32,
-    duration_ticks: u32,
-    accel: i32,
-    max_speed: i32,
-    friction_permille: u32,
-    bounds: i32,
-    move_from_tick: u32,
-    stop_at_tick: u32,
+    scenario: Vec<f64>,
+    script: Vec<f64>,
     rtt_mean_ms: u32,
     rtt_jitter_ms: u32,
     loss_pct: u32,
@@ -196,16 +193,8 @@ pub fn run_metrics_custom(
     burst_loss: bool,
     config: Vec<f64>,
 ) -> Vec<f64> {
-    let scenario = boundary::build_scenario(&boundary::BuildScenario {
-        tick_rate,
-        duration_ticks,
-        accel,
-        max_speed,
-        friction_permille,
-        bounds,
-        move_from_tick,
-        stop_at_tick,
-    });
+    let built =
+        boundary::build_scenario_with_script(&boundary::scenario_from_buffer(&scenario), &script);
     let segment = boundary::custom_segment(&boundary::CustomSegment {
         rtt_mean_ms,
         rtt_jitter_ms,
@@ -214,12 +203,7 @@ pub fn run_metrics_custom(
         duplicate_pct,
         burst_loss,
     });
-    boundary::metrics_buffer(
-        &scenario,
-        segment,
-        seed,
-        boundary::config_from_buffer(&config),
-    )
+    boundary::metrics_buffer(&built, segment, seed, boundary::config_from_buffer(&config))
 }
 
 /// Runs a block of the configuration grid and returns one aggregated point per
@@ -229,37 +213,22 @@ pub fn run_metrics_custom(
 /// 0.4 ms and a worker round trip costs about the same, so a sweep of thousands issued
 /// one at a time would spend as long on messaging as on simulating. The pool splits
 /// the grid and each worker calls this once.
-#[allow(clippy::too_many_arguments)]
 #[wasm_bindgen]
 pub fn run_sweep(
-    tick_rate: u32,
-    duration_ticks: u32,
-    accel: i32,
-    max_speed: i32,
-    friction_permille: u32,
-    bounds: i32,
-    move_from_tick: u32,
-    stop_at_tick: u32,
+    scenario: Vec<f64>,
+    script: Vec<f64>,
     configs: Vec<f64>,
     segments: Vec<f64>,
     seeds: Vec<f64>,
 ) -> Vec<f64> {
-    let scenario = boundary::build_scenario(&boundary::BuildScenario {
-        tick_rate,
-        duration_ticks,
-        accel,
-        max_speed,
-        friction_permille,
-        bounds,
-        move_from_tick,
-        stop_at_tick,
-    });
+    let built =
+        boundary::build_scenario_with_script(&boundary::scenario_from_buffer(&scenario), &script);
     // seeds cross as f64 because a Vec<u64> would marshal as BigInt64Array, and the
     // sweep's seeds are small counting numbers rather than the full u64 range the
     // determinism gate uses
     let seed_list: Vec<u64> = seeds.iter().map(|&s| s.max(0.0) as u64).collect();
     boundary::sweep_buffer(
-        &scenario,
+        &built,
         &boundary::configs_from_buffer(&configs),
         &boundary::segments_from_buffer(&segments),
         &seed_list,
@@ -267,33 +236,18 @@ pub fn run_sweep(
 }
 
 /// Per-tick server and client positions, for the replay view.
-#[allow(clippy::too_many_arguments)]
 #[wasm_bindgen]
 pub fn run_snapshots(
     seed: u64,
     segment_index: u32,
-    tick_rate: u32,
-    duration_ticks: u32,
-    accel: i32,
-    max_speed: i32,
-    friction_permille: u32,
-    bounds: i32,
-    move_from_tick: u32,
-    stop_at_tick: u32,
+    scenario: Vec<f64>,
+    script: Vec<f64>,
     config: Vec<f64>,
 ) -> Vec<f64> {
-    let scenario = boundary::build_scenario(&boundary::BuildScenario {
-        tick_rate,
-        duration_ticks,
-        accel,
-        max_speed,
-        friction_permille,
-        bounds,
-        move_from_tick,
-        stop_at_tick,
-    });
+    let built =
+        boundary::build_scenario_with_script(&boundary::scenario_from_buffer(&scenario), &script);
     boundary::snapshot_buffer(
-        &scenario,
+        &built,
         boundary::segment_by_index(segment_index),
         seed,
         boundary::config_from_buffer(&config),
@@ -309,14 +263,8 @@ pub fn run_snapshots(
 #[wasm_bindgen]
 pub fn run_frames(
     seed: u64,
-    tick_rate: u32,
-    duration_ticks: u32,
-    accel: i32,
-    max_speed: i32,
-    friction_permille: u32,
-    bounds: i32,
-    move_from_tick: u32,
-    stop_at_tick: u32,
+    scenario: Vec<f64>,
+    script: Vec<f64>,
     rtt_mean_ms: u32,
     rtt_jitter_ms: u32,
     loss_pct: u32,
@@ -325,16 +273,8 @@ pub fn run_frames(
     burst_loss: bool,
     config: Vec<f64>,
 ) -> Vec<f64> {
-    let scenario = boundary::build_scenario(&boundary::BuildScenario {
-        tick_rate,
-        duration_ticks,
-        accel,
-        max_speed,
-        friction_permille,
-        bounds,
-        move_from_tick,
-        stop_at_tick,
-    });
+    let built =
+        boundary::build_scenario_with_script(&boundary::scenario_from_buffer(&scenario), &script);
     let segment = boundary::custom_segment(&boundary::CustomSegment {
         rtt_mean_ms,
         rtt_jitter_ms,
@@ -343,12 +283,7 @@ pub fn run_frames(
         duplicate_pct,
         burst_loss,
     });
-    boundary::frame_buffer(
-        &scenario,
-        segment,
-        seed,
-        boundary::config_from_buffer(&config),
-    )
+    boundary::frame_buffer(&built, segment, seed, boundary::config_from_buffer(&config))
 }
 
 #[cfg(test)]

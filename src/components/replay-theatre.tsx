@@ -14,16 +14,19 @@ import {
   type Cursor,
 } from "../replay/playback";
 import type { SimPool } from "../workers/pool";
-import {
-  DEFAULT_SCENARIO,
-  type CustomSegmentSpec,
-  type Frame,
-  type NetcodeConfig,
+import type {
+  CustomSegmentSpec,
+  Frame,
+  InputEventSpec,
+  NetcodeConfig,
+  ScenarioSpec,
 } from "../sim/types";
 
 interface ReplayTheatreProps {
   pool: () => SimPool;
   config: NetcodeConfig;
+  scenario: ScenarioSpec;
+  script: readonly InputEventSpec[];
 }
 
 /** A link with enough latency and loss that the techniques have visible work to do. */
@@ -48,7 +51,7 @@ const TRAIL_TICKS = 24;
  * The simulation runs once per configuration change and is then scrubbed. Re-running
  * per frame would make playback a function of how fast the machine is.
  */
-const ReplayTheatre: FC<ReplayTheatreProps> = ({ pool, config }) => {
+const ReplayTheatre: FC<ReplayTheatreProps> = ({ pool, config, scenario, script }) => {
   const [frames, setFrames] = useState<Frame[]>([]);
   const [cursor, setCursor] = useState<Cursor>(START);
   const [playing, setPlaying] = useState(true);
@@ -79,7 +82,7 @@ const ReplayTheatre: FC<ReplayTheatreProps> = ({ pool, config }) => {
 
     setLoading(true);
     pool()
-      .runFrames(DEFAULT_SCENARIO, segment, parsed, config)
+      .runFrames(scenario, segment, parsed, config, script)
       .then((next) => {
         if (cancelled) return;
         setFrames(next);
@@ -100,12 +103,16 @@ const ReplayTheatre: FC<ReplayTheatreProps> = ({ pool, config }) => {
     return () => {
       cancelled = true;
     };
-  }, [pool, config, segment, seed, moveTo]);
+  }, [pool, config, segment, seed, moveTo, scenario, script]);
 
   // the loop is keyed on the frame count as well as on playing, because on the first
   // mount there are no frames yet. without the restart it would start, find nothing to
   // play, stop, and never run again once the run landed
   const frameCount = frames.length;
+
+  // playback runs at the scenario's own rate, so an authored scenario at 128 Hz plays
+  // in the same wall-clock time a 64 Hz one does rather than at half speed
+  const tickRate = scenario.tickRate;
 
   useEffect(() => {
     if (!playing || frameCount === 0) return;
@@ -117,7 +124,7 @@ const ReplayTheatre: FC<ReplayTheatreProps> = ({ pool, config }) => {
       previous = now;
 
       const count = framesRef.current.length;
-      const next = advance(cursorRef.current, elapsed, DEFAULT_SCENARIO.tickRate, count);
+      const next = advance(cursorRef.current, elapsed, tickRate, count);
       moveTo(next);
 
       // stop at the end rather than looping, so a finished run reads as finished.
@@ -133,7 +140,7 @@ const ReplayTheatre: FC<ReplayTheatreProps> = ({ pool, config }) => {
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [playing, frameCount, moveTo]);
+  }, [playing, frameCount, moveTo, tickRate]);
 
   const onPlayPause = useCallback(() => {
     if (playingRef.current) {
@@ -216,7 +223,7 @@ const ReplayTheatre: FC<ReplayTheatreProps> = ({ pool, config }) => {
       <TransportControls
         cursor={cursor}
         frameCount={frames.length}
-        tickRate={DEFAULT_SCENARIO.tickRate}
+        tickRate={tickRate}
         playing={playing}
         seed={seed}
         disabled={loading || frames.length === 0}
@@ -247,7 +254,7 @@ const ReplayTheatre: FC<ReplayTheatreProps> = ({ pool, config }) => {
       </dl>
 
       <ConditionControls segment={segment} disabled={loading} onChange={setSegment} />
-      <ConfigStrip config={config} />
+      <ConfigStrip config={config} firesShots={script.some((e) => e.action === "fire")} />
     </section>
   );
 };

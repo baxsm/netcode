@@ -5,11 +5,8 @@ import SweepControls from "../components/sweep-controls";
 import SweepResult from "../components/sweep-result";
 import type { SimPool } from "../workers/pool";
 import { useNavigate } from "../router";
-import {
-  DEFAULT_SCENARIO,
-  type NetcodeConfig,
-  type SweepPoint,
-} from "../sim/types";
+import { useScenarios } from "../scenarios/use-scenarios";
+import type { NetcodeConfig, SweepPoint } from "../sim/types";
 import {
   DEFAULT_SEED_COUNT,
   planSweep,
@@ -17,9 +14,10 @@ import {
   TECHNIQUE_PRESETS,
 } from "../sweep/grid";
 import { balancedIndex, frontOrder, paretoIndices } from "../sweep/pareto";
-import { PROFILES, type NetworkProfile } from "../sweep/profiles";
+import { PROFILES } from "../sweep/profiles";
 import { buildReport, downloadJson } from "../sweep/report";
 import { configJson } from "../sweep/metrics-view";
+import { encodeConfigParams } from "../verify/link";
 
 interface TunePageProps {
   pool: () => SimPool;
@@ -28,11 +26,19 @@ interface TunePageProps {
 
 type Status = "idle" | "running" | "done" | "failed";
 
-/** Shorter than the replay scenario: a sweep runs this thousands of times. */
-const SWEEP_SCENARIO = { ...DEFAULT_SCENARIO, durationTicks: 300 };
+/**
+ * Ticks a swept run covers.
+ *
+ * Shorter than the scenario's own duration, because a sweep runs it thousands of
+ * times and the tradeoff being measured has settled well before then. Capped rather
+ * than replaced, so a scenario authored shorter than this keeps its own length.
+ */
+const SWEEP_TICKS = 300;
 
 const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
   const navigate = useNavigate();
+  const { scenarios, profiles, scenarioFor, profileFor } = useScenarios();
+  const [scenarioId, setScenarioId] = useState(() => scenarioFor(null).id);
   const [profileId, setProfileId] = useState(PROFILES[0]?.id ?? "mixed");
   const [presetLabel, setPresetLabel] = useState(TECHNIQUE_PRESETS[0]?.label ?? "Full stack");
   const [seedCount, setSeedCount] = useState(DEFAULT_SEED_COUNT);
@@ -45,9 +51,22 @@ const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
   const [selected, setSelected] = useState<number | null>(null);
   const [compared, setCompared] = useState<number | null>(null);
 
-  const profile = useMemo(
-    () => PROFILES.find((p) => p.id === profileId) ?? (PROFILES[0] as NetworkProfile),
-    [profileId],
+  const chosen = scenarioFor(scenarioId);
+  const profile = profileFor(profileId);
+
+  /**
+   * The scenario as the sweep runs it, capped for cost.
+   *
+   * Held in a memo so the object identity is stable, since it is a dependency of the
+   * run callback and a fresh object every render would make that callback new every
+   * render too.
+   */
+  const sweepScenario = useMemo(
+    () => ({
+      ...chosen.spec,
+      durationTicks: Math.min(chosen.spec.durationTicks, SWEEP_TICKS),
+    }),
+    [chosen.spec],
   );
   const techniques = useMemo(
     () =>
@@ -88,11 +107,12 @@ const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
 
     try {
       const result = await active.runSweep(
-        SWEEP_SCENARIO,
+        sweepScenario,
         plan.configs,
         profile.segments,
         plan.configs.length > 0 ? Array.from({ length: seedCount }, (_, i) => i + 1) : [],
         setProgress,
+        chosen.script,
       );
       setPoints(result);
       // the balanced point is a starting suggestion, not the answer. which end of
@@ -104,7 +124,7 @@ const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
       setError(cause instanceof Error ? cause.message : String(cause));
       setStatus("failed");
     }
-  }, [plan.configs, pool, profile.segments, seedCount]);
+  }, [plan.configs, pool, profile.segments, seedCount, sweepScenario, chosen.script]);
 
   const select = useCallback(
     (index: number, additive: boolean) => {
@@ -125,21 +145,8 @@ const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
     if (!point) return;
     // the replay reads the constants off the hash, so the chosen point opens as the
     // configuration it actually is rather than as the page default
-    navigate("/", {
-      interp: String(point.config.interpolationDelayTicks),
-      buffer: String(point.config.inputBufferTicks),
-      blend: String(point.config.correctionBlendPermille),
-      snap: String(point.config.snapThresholdPermille),
-      rollback: String(point.config.rollbackWindowTicks),
-      extrap: String(point.config.extrapolationLimitTicks),
-      techniques: String(
-        Object.values(point.config.techniques).reduce(
-          (bits, on, i) => bits | (on ? 1 << i : 0),
-          0,
-        ),
-      ),
-    });
-  }, [navigate, point]);
+    navigate("/", { scenario: chosen.id, ...encodeConfigParams(point.config) });
+  }, [navigate, point, chosen.id]);
 
   return (
     <>
@@ -154,11 +161,16 @@ const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
       </header>
 
       <SweepControls
+        scenario={chosen}
+        scenarios={scenarios}
         profile={profile}
+        profiles={profiles}
         presetLabel={presetLabel}
         seedCount={seedCount}
+        sweepTicks={sweepScenario.durationTicks}
         plan={plan}
         running={running}
+        onScenario={setScenarioId}
         onProfile={setProfileId}
         onPreset={setPresetLabel}
         onSeedCount={setSeedCount}
@@ -196,7 +208,7 @@ const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
           <ParetoChart
             points={points}
             frontOrdered={frontOrdered}
-            scenario={SWEEP_SCENARIO}
+            scenario={sweepScenario}
             selected={selected}
             compared={compared}
             onSelect={select}
@@ -233,7 +245,7 @@ const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
         <SweepResult
           point={point}
           comparedTo={other ?? null}
-          scenario={SWEEP_SCENARIO}
+          scenario={sweepScenario}
           onFront={selected !== null && frontSet.has(selected)}
           onOpenReplay={openInReplay}
           onExportConfig={() =>
@@ -243,7 +255,10 @@ const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
             downloadJson(
               "netcode-report.json",
               buildReport({
-                scenario: SWEEP_SCENARIO,
+                scenario: sweepScenario,
+                scenarioId: chosen.id,
+                scenarioName: chosen.name,
+                script: chosen.script,
                 profile,
                 seeds: Array.from({ length: seedCount }, (_, i) => i + 1),
                 points,

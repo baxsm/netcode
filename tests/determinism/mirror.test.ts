@@ -19,6 +19,11 @@ import {
   decodeSnapshots,
   describeConfigError,
   encodeConfig,
+  encodeScenario,
+  encodeScript,
+  builtInScript,
+  SCENARIO_LEN,
+  SCRIPT_STRIDE,
   type NetcodeConfig,
 } from "../../src/sim/types";
 
@@ -36,20 +41,16 @@ const core = require("../../core/pkg-node/netcode_core.js") as {
   frame_stride: () => number;
   frame_client_count: () => number;
   absent_tick: () => number;
+  scenario_len: () => number;
+  script_stride: () => number;
 };
 
 /** A hostile link, which is the one that produces corrections worth drawing. */
 const framesFor = (seed: bigint, config: NetcodeConfig = DEFAULT_CONFIG) =>
   (core.run_frames as unknown as (...a: unknown[]) => Float64Array)(
     seed,
-    s.tickRate,
-    s.durationTicks,
-    s.accel,
-    s.maxSpeed,
-    s.frictionPermille,
-    s.bounds,
-    s.moveFromTick,
-    s.stopAtTick,
+    encodeScenario(s),
+    encodeScript([]),
     200,
     80,
     5,
@@ -66,14 +67,8 @@ const metricsFor = (segment: number, seed: bigint, config: NetcodeConfig = BASEL
   (core.run_metrics as unknown as (...a: unknown[]) => Float64Array)(
     seed,
     segment,
-    s.tickRate,
-    s.durationTicks,
-    s.accel,
-    s.maxSpeed,
-    s.frictionPermille,
-    s.bounds,
-    s.moveFromTick,
-    s.stopAtTick,
+    encodeScenario(s),
+    encodeScript([]),
     encodeConfig(config),
   );
 
@@ -88,6 +83,78 @@ describe("mirror agrees with the core", () => {
 
   it("lists the same segment presets in the same order", () => {
     expect(core.segment_names().split("\t")).toEqual([...SEGMENT_PRESETS]);
+  });
+
+  it("declares the same scenario length", () => {
+    expect(core.scenario_len()).toBe(SCENARIO_LEN);
+  });
+
+  it("declares the same script stride", () => {
+    expect(core.script_stride()).toBe(SCRIPT_STRIDE);
+  });
+
+  /**
+   * An empty script must reproduce the built-in one exactly, and the mirror's version
+   * of that script must reproduce it too. Without this the editor could open a
+   * built-in scenario, show a script, and run a different one.
+   */
+  it("mirrors the built-in script the core falls back to", () => {
+    const implicit = decodeMetrics(metricsFor(3, 9n));
+    const explicit = decodeMetrics(
+      (core.run_metrics as unknown as (...a: unknown[]) => Float64Array)(
+        9n,
+        3,
+        encodeScenario(s),
+        encodeScript(builtInScript(s)),
+        encodeConfig(BASELINE_CONFIG),
+      ),
+    );
+    expect(explicit.stateHash).toBe(implicit.stateHash);
+  });
+
+  it("mirrors a built-in script that carries a stop", () => {
+    const stopping = { ...s, moveFromTick: 10, stopAtTick: 120 };
+    const run = (script: ReturnType<typeof builtInScript>) =>
+      decodeMetrics(
+        (core.run_metrics as unknown as (...a: unknown[]) => Float64Array)(
+          9n,
+          3,
+          encodeScenario(stopping),
+          encodeScript(script),
+          encodeConfig(BASELINE_CONFIG),
+        ),
+      ).stateHash;
+
+    expect(builtInScript(stopping)).toHaveLength(2);
+    expect(run(builtInScript(stopping))).toBe(
+      decodeMetrics(
+        (core.run_metrics as unknown as (...a: unknown[]) => Float64Array)(
+          9n,
+          3,
+          encodeScenario(stopping),
+          encodeScript([]),
+          encodeConfig(BASELINE_CONFIG),
+        ),
+      ).stateHash,
+    );
+  });
+
+  /** A shot has to reach the core, or the rewind limit has nothing to act on. */
+  it("carries an authored shot into the run", () => {
+    const scenario = { ...s, durationTicks: 200 };
+    const metrics = decodeMetrics(
+      (core.run_metrics as unknown as (...a: unknown[]) => Float64Array)(
+        4n,
+        3,
+        encodeScenario(scenario),
+        encodeScript([
+          { tick: 0, action: "move", dxPermille: 1000, dyPermille: 0 },
+          { tick: 120, action: "fire", dxPermille: 1000, dyPermille: 0 },
+        ]),
+        encodeConfig(DEFAULT_CONFIG),
+      ),
+    );
+    expect(metrics.shotsFired).toBe(1);
   });
 
   it("decodes a buffer the core produced", () => {
@@ -396,14 +463,8 @@ describe("snapshots", () => {
     const raw = (core.run_snapshots as unknown as (...a: unknown[]) => Float64Array)(
       5n,
       1,
-      s.tickRate,
-      50,
-      s.accel,
-      s.maxSpeed,
-      s.frictionPermille,
-      s.bounds,
-      s.moveFromTick,
-      s.stopAtTick,
+      encodeScenario({ ...s, durationTicks: 50 }),
+      encodeScript([]),
       encodeConfig(BASELINE_CONFIG),
     );
     const decoded = decodeSnapshots(raw);
@@ -416,14 +477,8 @@ describe("snapshots", () => {
     const raw = (core.run_snapshots as unknown as (...a: unknown[]) => Float64Array)(
       5n,
       1,
-      s.tickRate,
-      100,
-      s.accel,
-      s.maxSpeed,
-      s.frictionPermille,
-      s.bounds,
-      s.moveFromTick,
-      s.stopAtTick,
+      encodeScenario({ ...s, durationTicks: 100 }),
+      encodeScript([]),
       encodeConfig(BASELINE_CONFIG),
     );
     const decoded = decodeSnapshots(raw);

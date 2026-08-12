@@ -45,16 +45,21 @@ export type SweptKey =
  * confirm it.
  *
  * Three constants from `NetcodeConfig` are deliberately not swept, because measuring
- * them showed they cannot move a result on this scenario:
+ * them showed none of them moves either score:
  *
  * - **Rollback window** only clamps the depth that gets *reported*. It bounds a
  *   metric rather than changing what the simulation does.
- * - **Server rewind limit** only affects how a shot resolves, and the built-in
- *   scenario fires none. It becomes sweepable when scenario authoring lands.
  * - **Extrapolation limit** only acts when the state buffer cannot reach the render
  *   tick, which a predicting client never asks it to.
+ * - **Server rewind limit** is the one that changes a real outcome. On a scenario
+ *   that fires, raising it from 0 to 200 ms takes hit registration from 35% to 100%.
+ *   It stays off the grid anyway because hit registration is not a term in either
+ *   score, so every value it takes returns the same two coordinates and the front
+ *   would gain duplicate points under different labels. Tuning it is a separate
+ *   question with a direct answer, which `/verify` shows rather than searching for:
+ *   the limit has to cover the round trip of the players being compensated for.
  *
- * Sweeping them would multiply the grid by 36 while every added point returned a
+ * Sweeping all three would multiply the grid by 36 while every added point returned a
  * duplicate result under a different label, which reads as a flat front rather than
  * as knobs that do nothing.
  */

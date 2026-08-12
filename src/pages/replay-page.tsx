@@ -6,14 +6,13 @@ import ReplayTheatre from "../components/replay-theatre";
 import TechniqueControls from "../components/technique-controls";
 import type { Comparison, SimPool } from "../workers/pool";
 import { useRouteParams } from "../router";
+import { useScenarios } from "../scenarios/use-scenarios";
+import { decodeConfigParams } from "../verify/link";
 import {
   DEFAULT_CONFIG,
-  DEFAULT_SCENARIO,
   SEGMENT_PRESETS,
-  TECHNIQUE_FIELDS,
   describeConfigError,
   type NetcodeConfig,
-  type TechniqueSet,
 } from "../sim/types";
 
 interface ReplayPageProps {
@@ -24,44 +23,15 @@ type Status = "idle" | "running" | "done" | "failed";
 
 const SEED = 42n;
 
-/**
- * A configuration carried in from the sweep, when there is one.
- *
- * The tune page links here with the constants of the point that was chosen, so
- * "open in replay" shows that configuration rather than the page default. Anything
- * missing or unparseable falls back to the default rather than to zero, since a
- * partly-applied config would show numbers for something nobody selected.
- */
-function configFromParams(params: URLSearchParams): NetcodeConfig | null {
-  if (![...params.keys()].length) return null;
-
-  const number = (key: string, fallback: number) => {
-    const raw = Number(params.get(key));
-    return Number.isFinite(raw) && raw >= 0 ? raw : fallback;
-  };
-
-  const bits = Number(params.get("techniques"));
-  const techniques: TechniqueSet = Number.isFinite(bits)
-    ? (Object.fromEntries(
-        TECHNIQUE_FIELDS.map((field, i) => [field, (bits & (1 << i)) !== 0]),
-      ) as TechniqueSet)
-    : DEFAULT_CONFIG.techniques;
-
-  return {
-    techniques,
-    interpolationDelayTicks: number("interp", DEFAULT_CONFIG.interpolationDelayTicks),
-    inputBufferTicks: number("buffer", DEFAULT_CONFIG.inputBufferTicks),
-    rollbackWindowTicks: number("rollback", DEFAULT_CONFIG.rollbackWindowTicks),
-    correctionBlendPermille: number("blend", DEFAULT_CONFIG.correctionBlendPermille),
-    snapThresholdPermille: number("snap", DEFAULT_CONFIG.snapThresholdPermille),
-    serverRewindLimitMs: DEFAULT_CONFIG.serverRewindLimitMs,
-    extrapolationLimitTicks: number("extrap", DEFAULT_CONFIG.extrapolationLimitTicks),
-  };
-}
-
 const ReplayPage: FC<ReplayPageProps> = ({ pool }) => {
   const params = useRouteParams();
-  const fromSweep = useMemo(() => configFromParams(params), [params]);
+  const fromSweep = useMemo(() => decodeConfigParams(params), [params]);
+  const { scenarios, scenarioFor } = useScenarios();
+
+  // the scenarios page links here with an id, so opening an authored scenario shows
+  // that one rather than the default
+  const [scenarioId, setScenarioId] = useState(() => scenarioFor(params.get("scenario")).id);
+  const scenario = scenarioFor(scenarioId);
 
   const [config, setConfig] = useState<NetcodeConfig>(fromSweep ?? DEFAULT_CONFIG);
   const [rows, setRows] = useState<Comparison[]>([]);
@@ -91,21 +61,32 @@ const ReplayPage: FC<ReplayPageProps> = ({ pool }) => {
         setInvalid("");
 
         const indices = SEGMENT_PRESETS.map((_, i) => i);
-        setRows(await active.runComparison(DEFAULT_SCENARIO, indices, SEED, using, setProgress));
+        setRows(
+          await active.runComparison(
+            scenario.spec,
+            indices,
+            SEED,
+            using,
+            setProgress,
+            scenario.script,
+          ),
+        );
         setStatus("done");
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
         setStatus("failed");
       }
     },
-    [pool],
+    [pool, scenario],
   );
 
-  // the initial run only. `config` is deliberately read through the ref rather than
-  // depended on, because re-running on every toggle would fire a sweep mid-edit
-  const initial = useRef(config);
+  // the comparison re-runs when the scenario changes, since every number in the table
+  // is measured against it. `config` is read through the ref rather than depended on,
+  // because re-running on every toggle would fire a sweep mid-edit
+  const latest = useRef(config);
+  latest.current = config;
   useEffect(() => {
-    void run(initial.current);
+    void run(latest.current);
   }, [run]);
 
   const enabledCount = useMemo(
@@ -128,11 +109,39 @@ const ReplayPage: FC<ReplayPageProps> = ({ pool }) => {
 
       {fromSweep ? (
         <p className="state" data-testid="from-sweep">
-          Showing the configuration selected on the tune page.
+          Showing a configuration carried in from another page rather than the default.
         </p>
       ) : null}
 
-      <ReplayTheatre pool={pool} config={config} />
+      <section className="controls">
+        <div className="field inline">
+          <label htmlFor="replay-scenario">Scenario</label>
+          <select
+            id="replay-scenario"
+            value={scenario.id}
+            disabled={running}
+            onChange={(e) => setScenarioId(e.target.value)}
+          >
+            {scenarios.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <span className="muted">
+          {scenario.script.length} scripted{" "}
+          {scenario.script.length === 1 ? "input" : "inputs"} over{" "}
+          {scenario.spec.durationTicks} ticks at {scenario.spec.tickRate} Hz
+        </span>
+      </section>
+
+      <ReplayTheatre
+        pool={pool}
+        config={config}
+        scenario={scenario.spec}
+        script={scenario.script}
+      />
 
       <h2 className="section-heading">Measured across every preset</h2>
       <p className="note">
@@ -176,7 +185,7 @@ const ReplayPage: FC<ReplayPageProps> = ({ pool }) => {
       ) : null}
 
       {rows.length > 0 && !invalid ? (
-        <ComparisonTable rows={rows} scenario={DEFAULT_SCENARIO} seed={SEED} />
+        <ComparisonTable rows={rows} scenario={scenario.spec} seed={SEED} />
       ) : null}
 
       <PeekersPanel pool={pool} />

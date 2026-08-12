@@ -7,6 +7,9 @@
     "types": ["vite/client", "node"],
 
     "noEmit": true,
+    // the baseline runner executes under plain Node, whose ESM resolver needs the
+    // extension written out. Vite and tsc both accept it
+    "allowImportingTsExtensions": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,

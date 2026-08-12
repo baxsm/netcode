@@ -1,14 +1,20 @@
 import type { FC } from "react";
+import type { AuthoredScenario } from "../scenarios/store";
 import { DEFAULT_SEED_COUNT, TECHNIQUE_PRESETS, type SweepPlan } from "../sweep/grid";
-import { describeSegment, PROFILES, totalWeight, weightsAreWhole } from "../sweep/profiles";
+import { describeSegment, totalWeight, weightsAreWhole } from "../sweep/profiles";
 import type { NetworkProfile } from "../sweep/profiles";
 
 interface SweepControlsProps {
+  scenario: AuthoredScenario;
+  scenarios: readonly AuthoredScenario[];
   profile: NetworkProfile;
+  profiles: readonly NetworkProfile[];
   presetLabel: string;
   seedCount: number;
+  sweepTicks: number;
   plan: SweepPlan;
   running: boolean;
+  onScenario: (id: string) => void;
   onProfile: (id: string) => void;
   onPreset: (label: string) => void;
   onSeedCount: (count: number) => void;
@@ -18,11 +24,16 @@ interface SweepControlsProps {
 const SEED_CHOICES = [4, 8, 16];
 
 const SweepControls: FC<SweepControlsProps> = ({
+  scenario,
+  scenarios,
   profile,
+  profiles,
   presetLabel,
   seedCount,
+  sweepTicks,
   plan,
   running,
+  onScenario,
   onProfile,
   onPreset,
   onSeedCount,
@@ -35,6 +46,27 @@ const SweepControls: FC<SweepControlsProps> = ({
 
     <div className="sweep-fields">
       <div className="field">
+        <label htmlFor="sweep-scenario">Scenario</label>
+        <select
+          id="sweep-scenario"
+          value={scenario.id}
+          disabled={running}
+          onChange={(e) => onScenario(e.target.value)}
+        >
+          {scenarios.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <span className="field-note">
+          {scenario.script.length} scripted{" "}
+          {scenario.script.length === 1 ? "input" : "inputs"}, run over the first{" "}
+          {sweepTicks} ticks.
+        </span>
+      </div>
+
+      <div className="field">
         <label htmlFor="profile">Player population</label>
         <select
           id="profile"
@@ -42,7 +74,7 @@ const SweepControls: FC<SweepControlsProps> = ({
           disabled={running}
           onChange={(e) => onProfile(e.target.value)}
         >
-          {PROFILES.map((p) => (
+          {profiles.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
             </option>

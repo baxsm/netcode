@@ -1,26 +1,39 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { SimPool } from "./workers/pool";
+import TooNarrow from "./components/too-narrow";
 import ReplayPage from "./pages/replay-page";
+import ScenariosPage from "./pages/scenarios-page";
 import TunePage from "./pages/tune-page";
-import { hrefFor, ROUTE_LABELS, ROUTES, useRoute, type Route } from "./router";
+import VerifyPage from "./pages/verify-page";
+import { hrefFor, ROUTE_LABELS, ROUTES, useRoute } from "./router";
 
 /**
- * Routes that exist in the navigation but are not built yet.
- *
- * Listed rather than hidden: the product is four routes, and a nav that silently
- * omits two would misrepresent what is planned. What it must not do is render a
- * convincing empty page, which would read as a feature that works and returns
- * nothing.
+ * Below this the app shows a message instead of a layout. See `too-narrow.tsx` for
+ * why that is the choice rather than a responsive squeeze.
  */
-const PENDING: Partial<Record<Route, string>> = {
-  "/scenarios": "Scenario and network profile authoring.",
-  "/verify": "The Riot reproduction, the determinism check, and the failure demos.",
-};
+const MIN_WIDTH = 700;
+
+function subscribeToWidth(onChange: () => void): () => void {
+  const query = window.matchMedia(`(min-width: ${MIN_WIDTH}px)`);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+/** Read through a media query rather than a resize listener, so it fires once per
+ *  crossing rather than on every pixel of a drag. */
+function useWideEnough(): boolean {
+  return useSyncExternalStore(
+    subscribeToWidth,
+    () => window.matchMedia(`(min-width: ${MIN_WIDTH}px)`).matches,
+    () => true,
+  );
+}
 
 export default function App() {
   const poolRef = useRef<SimPool | null>(null);
   const [version, setVersion] = useState("");
   const route = useRoute();
+  const wideEnough = useWideEnough();
 
   /**
    * Created on demand rather than during render.
@@ -43,6 +56,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!wideEnough) return;
     let live = true;
     poolFor()
       .version()
@@ -55,9 +69,11 @@ export default function App() {
     return () => {
       live = false;
     };
-  }, [poolFor]);
+  }, [poolFor, wideEnough]);
 
-  const pending = PENDING[route];
+  // returned before the routes mount, so a viewport that cannot show a result is not
+  // also spending a worker pool producing one
+  if (!wideEnough) return <TooNarrow />;
 
   return (
     <>
@@ -84,17 +100,8 @@ export default function App() {
       <main>
         {route === "/" ? <ReplayPage pool={poolFor} /> : null}
         {route === "/tune" ? <TunePage pool={poolFor} coreVersion={version} /> : null}
-        {pending ? (
-          <>
-            <header>
-              <h1>{ROUTE_LABELS[route]}</h1>
-              <p>{pending}</p>
-            </header>
-            <p className="state" data-testid="not-built">
-              Not built yet. This route is part of the next phase.
-            </p>
-          </>
-        ) : null}
+        {route === "/scenarios" ? <ScenariosPage /> : null}
+        {route === "/verify" ? <VerifyPage pool={poolFor} coreVersion={version} /> : null}
       </main>
     </>
   );

@@ -5,7 +5,7 @@
  * and a result that cannot be re-derived is an assertion rather than a measurement.
  */
 
-import type { Metrics, ScenarioSpec, SweepPoint } from "../sim/types";
+import type { InputEventSpec, Metrics, ScenarioSpec, SweepPoint } from "../sim/types";
 import type { NetworkProfile } from "./profiles";
 import { correctionsPerMinute } from "./metrics-view";
 
@@ -13,6 +13,10 @@ export const SCHEMA_VERSION = 1;
 
 export interface ReportInput {
   scenario: ScenarioSpec;
+  scenarioId: string;
+  scenarioName: string;
+  /** The inputs the run received. Two configurations only compare under the same ones. */
+  script: readonly InputEventSpec[];
   profile: NetworkProfile;
   seeds: readonly number[];
   points: readonly SweepPoint[];
@@ -58,7 +62,14 @@ export function buildReport(input: ReportInput): string {
     {
       schemaVersion: SCHEMA_VERSION,
       core: input.coreVersion,
-      scenario: input.scenario,
+      // the script travels with the constants, since a configuration is only
+      // comparable against another that received the same inputs
+      scenario: {
+        id: input.scenarioId,
+        name: input.scenarioName,
+        ...input.scenario,
+        inputScript: [...input.script],
+      },
       profile: {
         id: input.profile.id,
         name: input.profile.name,

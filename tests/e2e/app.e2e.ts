@@ -134,8 +134,36 @@ test("rejects a configuration the core cannot run", async ({ page }) => {
   await expect(page.getByTestId("results")).toHaveCount(0);
 });
 
-test.describe("mobile", () => {
+/**
+ * Below tablet width the app says it needs a wider window rather than shipping a
+ * squeezed layout. That is a decision recorded in `ui.md`, so these assert the
+ * message appears and the app does not also mount behind it.
+ */
+test.describe("below tablet width", () => {
   test.use({ viewport: { width: 375, height: 812 } });
+
+  test("says it needs a wider window instead of degrading", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByTestId("too-narrow")).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Sections" })).toHaveCount(0);
+  });
+
+  test("does not scroll sideways", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByTestId("too-narrow")).toBeVisible();
+    const overflows = await page.evaluate(
+      () => document.body.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(overflows).toBe(false);
+  });
+});
+
+/**
+ * The narrow end of the supported range, where the layout stacks rather than being
+ * replaced. This is what the sub-1100px rule in `ui.md` describes.
+ */
+test.describe("at the narrow end of the supported range", () => {
+  test.use({ viewport: { width: 760, height: 900 } });
 
   test("the page does not scroll sideways and tables scroll instead", async ({ page }) => {
     await ready(page);
@@ -156,12 +184,12 @@ test.describe("mobile", () => {
     expect(layout.anyScrolls, "a table should be the thing that scrolls").toBe(true);
   });
 
-  test("the technique controls stay usable at phone width", async ({ page }) => {
+  test("the technique controls stay usable", async ({ page }) => {
     await ready(page);
 
     const box = await page.getByRole("checkbox", { name: "Client prediction" }).boundingBox();
     expect(box, "the first toggle must be on screen").not.toBeNull();
     expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
-    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(375);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(760);
   });
 });

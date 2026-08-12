@@ -225,8 +225,9 @@ test("runs without a console error", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test.describe("at a phone width", () => {
-  test.use({ viewport: { width: 375, height: 812 } });
+/** The narrow end of the supported range, where the three views stack. */
+test.describe("at the narrow end of the supported range", () => {
+  test.use({ viewport: { width: 760, height: 900 } });
 
   test("stacks the views without overflowing the page", async ({ page }) => {
     await ready(page);

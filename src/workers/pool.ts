@@ -12,6 +12,7 @@ import {
   BASELINE_CONFIG,
   type CustomSegmentSpec,
   type Frame,
+  type InputEventSpec,
   type Metrics,
   type NetcodeConfig,
   type ScenarioSpec,
@@ -19,6 +20,9 @@ import {
   type SweepPoint,
   type WeightedSegment,
 } from "../sim/types";
+
+/** Empty means the core runs the scenario's built-in move-then-stop script. */
+const NO_SCRIPT: readonly InputEventSpec[] = [];
 
 export interface SweepProgress {
   completed: number;
@@ -138,8 +142,9 @@ export class SimPool {
     segmentIndex: number,
     seed: bigint,
     config: NetcodeConfig,
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<Metrics> {
-    return this.withSlot((api) => api.runOne(scenario, segmentIndex, seed, config));
+    return this.withSlot((api) => api.runOne(scenario, segmentIndex, seed, config, script));
   }
 
   runCustom(
@@ -147,8 +152,9 @@ export class SimPool {
     segment: CustomSegmentSpec,
     seed: bigint,
     config: NetcodeConfig,
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<Metrics> {
-    return this.withSlot((api) => api.runCustom(scenario, segment, seed, config));
+    return this.withSlot((api) => api.runCustom(scenario, segment, seed, config, script));
   }
 
   runSnapshots(
@@ -156,8 +162,9 @@ export class SimPool {
     segmentIndex: number,
     seed: bigint,
     config: NetcodeConfig,
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<Snapshot[]> {
-    return this.withSlot((api) => api.runSnapshots(scenario, segmentIndex, seed, config));
+    return this.withSlot((api) => api.runSnapshots(scenario, segmentIndex, seed, config, script));
   }
 
   runFrames(
@@ -165,8 +172,9 @@ export class SimPool {
     segment: CustomSegmentSpec,
     seed: bigint,
     config: NetcodeConfig,
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<Frame[]> {
-    return this.withSlot((api) => api.runFrames(scenario, segment, seed, config));
+    return this.withSlot((api) => api.runFrames(scenario, segment, seed, config, script));
   }
 
   validate(config: NetcodeConfig): Promise<number> {
@@ -182,8 +190,11 @@ export class SimPool {
     segmentIndex: number,
     seed: bigint,
     config: NetcodeConfig,
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<bigint> {
-    return this.withSlot((api) => api.checkDeterminism(scenario, segmentIndex, seed, config));
+    return this.withSlot((api) =>
+      api.checkDeterminism(scenario, segmentIndex, seed, config, script),
+    );
   }
 
   /**
@@ -198,6 +209,7 @@ export class SimPool {
     seed: bigint,
     config: NetcodeConfig,
     onProgress?: (progress: SweepProgress) => void,
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<Comparison[]> {
     const total = segmentIndices.length * 2;
     let completed = 0;
@@ -212,8 +224,8 @@ export class SimPool {
     return Promise.all(
       segmentIndices.map(async (segmentIndex) => {
         const [baseline, configured] = await Promise.all([
-          step(this.runOne(scenario, segmentIndex, seed, BASELINE_CONFIG)),
-          step(this.runOne(scenario, segmentIndex, seed, config)),
+          step(this.runOne(scenario, segmentIndex, seed, BASELINE_CONFIG, script)),
+          step(this.runOne(scenario, segmentIndex, seed, config, script)),
         ]);
         return { segmentIndex, baseline, configured };
       }),
@@ -269,6 +281,7 @@ export class SimPool {
     segments: readonly WeightedSegment[],
     seeds: readonly number[],
     onProgress?: (progress: SweepProgress) => void,
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<SweepPoint[]> {
     if (configs.length === 0) return [];
 
@@ -290,7 +303,13 @@ export class SimPool {
 
     await Promise.all(
       chunks.map(async (chunk) => {
-        const points = await this.sweepChunk(scenario, chunk.configs, segmentList, seedList);
+        const points = await this.sweepChunk(
+          scenario,
+          chunk.configs,
+          segmentList,
+          seedList,
+          script,
+        );
         points.forEach((point, i) => {
           results[chunk.at + i] = point;
         });
@@ -323,12 +342,15 @@ export class SimPool {
     configs: NetcodeConfig[],
     segments: WeightedSegment[],
     seeds: number[],
+    script: readonly InputEventSpec[],
   ): Promise<SweepPoint[]> {
+    const call = (api: Comlink.Remote<SimApi>) =>
+      api.runSweep(scenario, configs, segments, seeds, script);
     try {
-      return await this.withSlot((api) => api.runSweep(scenario, configs, segments, seeds));
+      return await this.withSlot(call);
     } catch (first) {
       try {
-        return await this.withSlot((api) => api.runSweep(scenario, configs, segments, seeds));
+        return await this.withSlot(call);
       } catch (second) {
         const reason = second instanceof Error ? second.message : String(second);
         const first_ = configs[0];

@@ -240,15 +240,32 @@ export const SEGMENT_PRESETS = [
 
 export type SegmentPreset = (typeof SEGMENT_PRESETS)[number];
 
-export interface ScenarioSpec {
-  tickRate: number;
-  durationTicks: number;
-  accel: number;
-  maxSpeed: number;
-  frictionPermille: number;
-  bounds: number;
-  moveFromTick: number;
-  stopAtTick: number;
+/**
+ * The scenario fields, in the order the core's `scenario_from_buffer` reads them.
+ *
+ * One controllable body, because that is what the simulation integrates. A list of
+ * entities here would let the editor offer bodies the core never moves, which would
+ * report on motion that did not happen.
+ */
+export const SCENARIO_FIELDS = [
+  "tickRate",
+  "durationTicks",
+  "accel",
+  "maxSpeed",
+  "frictionPermille",
+  "bounds",
+  "moveFromTick",
+  "stopAtTick",
+] as const;
+
+export type ScenarioField = (typeof SCENARIO_FIELDS)[number];
+export type ScenarioSpec = Record<ScenarioField, number>;
+
+export const SCENARIO_LEN = SCENARIO_FIELDS.length;
+
+/** Built from the field list rather than by listing indices again. */
+export function encodeScenario(scenario: ScenarioSpec): Float64Array {
+  return Float64Array.from(SCENARIO_FIELDS.map((field) => scenario[field]));
 }
 
 export const DEFAULT_SCENARIO: ScenarioSpec = {
@@ -261,6 +278,61 @@ export const DEFAULT_SCENARIO: ScenarioSpec = {
   moveFromTick: 0,
   stopAtTick: 0,
 };
+
+/** Action tags, matching the core's `ACTION_*` constants. */
+export const INPUT_ACTIONS = ["move", "fire", "stop"] as const;
+export type InputActionKind = (typeof INPUT_ACTIONS)[number];
+
+export const ACTION_LABELS: Record<InputActionKind, string> = {
+  move: "Move",
+  fire: "Fire",
+  stop: "Stop",
+};
+
+/**
+ * One scripted input at one simulation tick.
+ *
+ * Direction components are permille, matching every other rate on this boundary, so
+ * no decimal is parsed through a float on the way into a fixed-point core. `stop`
+ * carries its direction slots unread rather than making the record variable width.
+ */
+export interface InputEventSpec {
+  tick: number;
+  action: InputActionKind;
+  dxPermille: number;
+  dyPermille: number;
+}
+
+/** Values per event: tick, action tag, then the two direction components. */
+export const SCRIPT_STRIDE = 4;
+
+export function encodeScript(script: readonly InputEventSpec[]): Float64Array {
+  const out = new Float64Array(script.length * SCRIPT_STRIDE);
+  script.forEach((event, i) => {
+    const at = i * SCRIPT_STRIDE;
+    out[at] = event.tick;
+    out[at + 1] = INPUT_ACTIONS.indexOf(event.action);
+    out[at + 2] = event.dxPermille;
+    out[at + 3] = event.dyPermille;
+  });
+  return out;
+}
+
+/**
+ * The move-then-stop script the core builds when no script is sent.
+ *
+ * Mirrored here so the editor can open a built-in scenario and show what it actually
+ * runs, rather than starting from an empty list that would run something else.
+ */
+export function builtInScript(scenario: ScenarioSpec): InputEventSpec[] {
+  const script: InputEventSpec[] = [
+    { tick: scenario.moveFromTick, action: "move", dxPermille: 1000, dyPermille: 0 },
+  ];
+  if (scenario.stopAtTick > scenario.moveFromTick) {
+    script.push({ tick: scenario.stopAtTick, action: "stop", dxPermille: 0, dyPermille: 0 });
+  }
+  return script;
+}
 
 export interface CustomSegmentSpec {
   rttMeanMs: number;

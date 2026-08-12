@@ -66,10 +66,19 @@ test.describe("baselines", () => {
     await expect(page.getByTestId("view-A")).toHaveScreenshot("view-a-tick-200.png");
   });
 
-  test("at a phone width", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
+  /** The narrow end of the supported range, where the three views stack. */
+  test("at the narrow end of the supported range", async ({ page }) => {
+    await page.setViewportSize({ width: 760, height: 900 });
     await settle(page, 200);
-    await expect(page).toHaveScreenshot("theatre-mobile.png", { fullPage: true });
+    await expect(page).toHaveScreenshot("theatre-narrow.png", { fullPage: true });
+  });
+
+  /** Below tablet the app is replaced by a message, so that is what gets pinned. */
+  test("below tablet width", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/");
+    await expect(page.getByTestId("too-narrow")).toBeVisible();
+    await expect(page).toHaveScreenshot("too-narrow.png", { fullPage: true });
   });
 
   /**
@@ -94,5 +103,23 @@ test.describe("baselines", () => {
       fullPage: true,
       mask: [page.getByTestId("front-size")],
     });
+  });
+
+  test("the scenarios page", async ({ page }) => {
+    await page.goto("/#/scenarios");
+    await expect(page.getByTestId("read-only")).toBeVisible({ timeout: 30_000 });
+    await expect(page).toHaveScreenshot("scenarios.png", { fullPage: true });
+  });
+
+  /**
+   * Captured after every check has settled, since the point of the page is the
+   * verdicts rather than the layout that holds them.
+   */
+  test("the verification page", async ({ page }) => {
+    await page.goto("/#/verify");
+    await expect(page.getByTestId("oracle-verdict")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("determinism-verdict")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("demo-list")).toBeVisible({ timeout: 60_000 });
+    await expect(page).toHaveScreenshot("verify.png", { fullPage: true });
   });
 });

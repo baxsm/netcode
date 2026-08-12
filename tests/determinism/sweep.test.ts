@@ -6,9 +6,12 @@ import {
   METRIC_FIELDS,
   SWEEP_SEGMENT_STRIDE,
   SWEEP_STRIDE,
+  decodeMetrics,
   decodeSweep,
   encodeConfig,
   encodeConfigs,
+  encodeScenario,
+  encodeScript,
   encodeSegments,
   type NetcodeConfig,
   type WeightedSegment,
@@ -17,12 +20,14 @@ import { buildGrid, planSweep, AXES } from "../../src/sweep/grid";
 import { paretoIndices } from "../../src/sweep/pareto";
 import { PROFILES } from "../../src/sweep/profiles";
 import { ALL_TECHNIQUES, NO_TECHNIQUES } from "../../src/sim/types";
+import { BUILT_IN_SCENARIOS } from "../../src/scenarios/store";
 
 const require = createRequire(import.meta.url);
 const core = require("../../core/pkg-node/netcode_core.js") as {
   sweep_stride: () => number;
   sweep_segment_stride: () => number;
   run_sweep: (...args: never[]) => Float64Array;
+  run_metrics: (...args: never[]) => Float64Array;
   default_config: () => Float64Array;
 };
 
@@ -37,14 +42,8 @@ function sweep(
   seeds: number[],
 ): Float64Array {
   return (core.run_sweep as unknown as (...a: unknown[]) => Float64Array)(
-    scenario.tickRate,
-    scenario.durationTicks,
-    scenario.accel,
-    scenario.maxSpeed,
-    scenario.frictionPermille,
-    scenario.bounds,
-    scenario.moveFromTick,
-    scenario.stopAtTick,
+    encodeScenario(scenario),
+    encodeScript([]),
     encodeConfigs(configs),
     encodeSegments(segments),
     Float64Array.from(seeds),
@@ -268,6 +267,53 @@ describe("every swept axis reaches the simulation", () => {
       expect(distinct.size, `${axis.label} produced one result for every value`).toBeGreaterThan(1);
     },
   );
+
+  /**
+   * The other half of the claim. `grid.ts` states that three constants are left off
+   * the grid because none of them moves either score, and that reason has to stay
+   * measured rather than inherited. If one of them starts moving a score, the grid
+   * comment is wrong and the axis probably belongs on it.
+   */
+  it.each([
+    ["rollbackWindowTicks", [2, 4, 8, 16, 24]],
+    ["extrapolationLimitTicks", [0, 2, 6, 12, 20]],
+    ["serverRewindLimitMs", [0, 50, 200, 800]],
+  ] as const)("%s is still off the grid because it moves no score", (key, values) => {
+    const configs = values.map((value) => ({ ...DEFAULT_CONFIG, [key]: value }));
+    const points = decodeSweep(sweep(configs, mixed, [1, 2]), configs);
+    const distinct = new Set(
+      points.map((p) => `${p.responsiveness.toFixed(6)}:${p.smoothness.toFixed(6)}`),
+    );
+    expect(
+      distinct.size,
+      `${key} moved a score, so the reason grid.ts gives for holding it fixed no longer holds`,
+    ).toBe(1);
+  });
+
+  /**
+   * The rewind limit does change a real outcome, just not a scored one. Pinned so the
+   * distinction the grid comment draws stays true: it is held back because hit
+   * registration is not a scoring term, not because the constant does nothing.
+   *
+   * Measured on a scenario that fires, since a scenario with no shots cannot show it.
+   */
+  it("the rewind limit still changes hit registration on a firing scenario", () => {
+    const firing = BUILT_IN_SCENARIOS.find((s) => s.id === "hitreg");
+    if (!firing) throw new Error("no firing scenario to measure against");
+
+    const accuracyAt = (limitMs: number) =>
+      decodeMetrics(
+        (core.run_metrics as unknown as (...a: unknown[]) => Float64Array)(
+          4n,
+          5,
+          encodeScenario({ ...firing.spec, durationTicks: 300 }),
+          encodeScript(firing.script),
+          encodeConfig({ ...DEFAULT_CONFIG, serverRewindLimitMs: limitMs }),
+        ),
+      ).hitRegistrationAccuracy;
+
+    expect(accuracyAt(400)).toBeGreaterThan(accuracyAt(0));
+  });
 
   /**
    * The x-axis of the chart. Without a constant that moves input latency every point

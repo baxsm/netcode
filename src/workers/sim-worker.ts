@@ -12,6 +12,8 @@ import init, {
   run_metrics_custom,
   run_snapshots,
   run_sweep,
+  scenario_len,
+  script_stride,
   sweep_segment_stride,
   sweep_stride,
   validate_config,
@@ -21,6 +23,8 @@ import {
   CONFIG_LEN,
   FRAME_CLIENT_COUNT,
   FRAME_STRIDE,
+  SCENARIO_LEN,
+  SCRIPT_STRIDE,
   SWEEP_SEGMENT_STRIDE,
   SWEEP_STRIDE,
   decodeFrames,
@@ -29,10 +33,13 @@ import {
   decodeSweep,
   encodeConfig,
   encodeConfigs,
+  encodeScenario,
+  encodeScript,
   encodeSegments,
   METRIC_FIELDS,
   type CustomSegmentSpec,
   type Frame,
+  type InputEventSpec,
   type Metrics,
   type NetcodeConfig,
   type ScenarioSpec,
@@ -40,6 +47,14 @@ import {
   type SweepPoint,
   type WeightedSegment,
 } from "../sim/types";
+
+/**
+ * The script a call sends when the caller has none.
+ *
+ * Empty means the core runs its built-in move-then-stop shape, which is what every
+ * result before authoring was produced by.
+ */
+const NO_SCRIPT: readonly InputEventSpec[] = [];
 
 let ready: Promise<void> | null = null;
 
@@ -82,6 +97,18 @@ function load(): Promise<void> {
           `core reads ${coreSegmentStride} values per segment but the mirror sends ${SWEEP_SEGMENT_STRIDE}`,
         );
       }
+      const coreScenarioLen = scenario_len();
+      if (coreScenarioLen !== SCENARIO_LEN) {
+        throw new Error(
+          `core reads ${coreScenarioLen} scenario values but the mirror sends ${SCENARIO_LEN}`,
+        );
+      }
+      const coreScriptStride = script_stride();
+      if (coreScriptStride !== SCRIPT_STRIDE) {
+        throw new Error(
+          `core reads ${coreScriptStride} values per input event but the mirror sends ${SCRIPT_STRIDE}`,
+        );
+      }
     });
   }
   return ready;
@@ -98,20 +125,15 @@ const api = {
     segmentIndex: number,
     seed: bigint,
     config: NetcodeConfig,
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<Metrics> {
     await load();
     return decodeMetrics(
       run_metrics(
         seed,
         segmentIndex,
-        scenario.tickRate,
-        scenario.durationTicks,
-        scenario.accel,
-        scenario.maxSpeed,
-        scenario.frictionPermille,
-        scenario.bounds,
-        scenario.moveFromTick,
-        scenario.stopAtTick,
+        encodeScenario(scenario),
+        encodeScript(script),
         encodeConfig(config),
       ),
     );
@@ -122,19 +144,14 @@ const api = {
     segment: CustomSegmentSpec,
     seed: bigint,
     config: NetcodeConfig,
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<Metrics> {
     await load();
     return decodeMetrics(
       run_metrics_custom(
         seed,
-        scenario.tickRate,
-        scenario.durationTicks,
-        scenario.accel,
-        scenario.maxSpeed,
-        scenario.frictionPermille,
-        scenario.bounds,
-        scenario.moveFromTick,
-        scenario.stopAtTick,
+        encodeScenario(scenario),
+        encodeScript(script),
         segment.rttMeanMs,
         segment.rttJitterMs,
         segment.lossPct,
@@ -151,20 +168,15 @@ const api = {
     segmentIndex: number,
     seed: bigint,
     config: NetcodeConfig,
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<Snapshot[]> {
     await load();
     return decodeSnapshots(
       run_snapshots(
         seed,
         segmentIndex,
-        scenario.tickRate,
-        scenario.durationTicks,
-        scenario.accel,
-        scenario.maxSpeed,
-        scenario.frictionPermille,
-        scenario.bounds,
-        scenario.moveFromTick,
-        scenario.stopAtTick,
+        encodeScenario(scenario),
+        encodeScript(script),
         encodeConfig(config),
       ),
     );
@@ -175,19 +187,14 @@ const api = {
     segment: CustomSegmentSpec,
     seed: bigint,
     config: NetcodeConfig,
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<Frame[]> {
     await load();
     return decodeFrames(
       run_frames(
         seed,
-        scenario.tickRate,
-        scenario.durationTicks,
-        scenario.accel,
-        scenario.maxSpeed,
-        scenario.frictionPermille,
-        scenario.bounds,
-        scenario.moveFromTick,
-        scenario.stopAtTick,
+        encodeScenario(scenario),
+        encodeScript(script),
         segment.rttMeanMs,
         segment.rttJitterMs,
         segment.lossPct,
@@ -211,18 +218,13 @@ const api = {
     configs: NetcodeConfig[],
     segments: WeightedSegment[],
     seeds: number[],
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<SweepPoint[]> {
     await load();
     return decodeSweep(
       run_sweep(
-        scenario.tickRate,
-        scenario.durationTicks,
-        scenario.accel,
-        scenario.maxSpeed,
-        scenario.frictionPermille,
-        scenario.bounds,
-        scenario.moveFromTick,
-        scenario.stopAtTick,
+        encodeScenario(scenario),
+        encodeScript(script),
         encodeConfigs(configs),
         encodeSegments(segments),
         Float64Array.from(seeds),
@@ -247,8 +249,9 @@ const api = {
     segmentIndex: number,
     seed: bigint,
     config: NetcodeConfig,
+    script: readonly InputEventSpec[] = NO_SCRIPT,
   ): Promise<bigint> {
-    const metrics = await api.runOne(scenario, segmentIndex, seed, config);
+    const metrics = await api.runOne(scenario, segmentIndex, seed, config, script);
     return metrics.stateHash;
   },
 };

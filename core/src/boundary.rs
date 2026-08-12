@@ -68,12 +68,112 @@ pub struct BuildScenario {
     pub stop_at_tick: u32,
 }
 
-/// Builds the one-entity scenario the Phase 1 surface exposes.
+/// Radius of the controllable body, which is also the hit tolerance a shot is judged
+/// against. One unit is what every scenario before authoring ran with, so it stays the
+/// default rather than becoming a field callers must remember to send.
+pub const DEFAULT_RADIUS: i32 = 1;
+
+/// Field count of the scenario buffer, in the order `scenario_from_buffer` reads.
 ///
-/// Authoring arbitrary scenarios is Phase 5. Until then a caller picks from this
-/// shape, which keeps the boundary flat without pretending the editor exists.
-pub fn build_scenario(spec: &BuildScenario) -> Scenario {
-    let mut input_script = vec![InputEvent {
+/// The scenario crosses as a buffer for the same reason the config does: passed
+/// positionally it would push the run functions past twenty arguments, where
+/// transposing two numbers still compiles and silently simulates something else.
+pub const SCENARIO_LEN: usize = 8;
+
+/// Reads a `BuildScenario` out of the flat buffer a caller passes in.
+///
+/// Index order is the contract with the TypeScript mirror, which builds the same array
+/// from a named field list. A short buffer falls back to the shape the built-in
+/// scenarios use rather than reading past the end.
+pub fn scenario_from_buffer(values: &[f64]) -> BuildScenario {
+    if values.len() < SCENARIO_LEN {
+        return BuildScenario {
+            tick_rate: 64,
+            duration_ticks: 0,
+            accel: 0,
+            max_speed: 0,
+            friction_permille: 1000,
+            bounds: 0,
+            move_from_tick: 0,
+            stop_at_tick: 0,
+        };
+    }
+    let tick = |i: usize| values[i].clamp(0.0, f64::from(u32::MAX)) as u32;
+    BuildScenario {
+        tick_rate: values[0].clamp(1.0, 1000.0) as u32,
+        duration_ticks: values[1].clamp(0.0, 1_000_000.0) as u32,
+        accel: values[2].clamp(-100_000.0, 100_000.0) as i32,
+        max_speed: values[3].clamp(-100_000.0, 100_000.0) as i32,
+        friction_permille: values[4].clamp(0.0, 1000.0) as u32,
+        bounds: values[5].clamp(0.0, 1_000_000.0) as i32,
+        move_from_tick: tick(6),
+        stop_at_tick: tick(7),
+    }
+}
+
+/// Writes a scenario into the flat layout `scenario_from_buffer` reads. The inverse of
+/// that function, and asserted to round trip.
+pub fn scenario_to_buffer(spec: &BuildScenario) -> Vec<f64> {
+    vec![
+        f64::from(spec.tick_rate),
+        f64::from(spec.duration_ticks),
+        f64::from(spec.accel),
+        f64::from(spec.max_speed),
+        f64::from(spec.friction_permille),
+        f64::from(spec.bounds),
+        f64::from(spec.move_from_tick),
+        f64::from(spec.stop_at_tick),
+    ]
+}
+
+/// Values per input event: tick, action tag, then the two direction components.
+///
+/// A direction is only read by `Move` and `Fire`, but it occupies its slots for `Stop`
+/// as well. A variable-width record would make the reader depend on the tag it has not
+/// parsed yet, and a misread tag would then shift every event after it.
+pub const SCRIPT_STRIDE: usize = 4;
+
+/// Action tags, matching the order of `InputAction`'s variants.
+///
+/// Numeric because the boundary carries no strings. An unknown tag becomes `Stop`
+/// rather than being dropped, so a script from a newer format still runs a defined
+/// input instead of silently losing a tick.
+pub const ACTION_MOVE: f64 = 0.0;
+pub const ACTION_FIRE: f64 = 1.0;
+pub const ACTION_STOP: f64 = 2.0;
+
+/// Directions cross as permille, matching every other rate on this boundary, so no
+/// decimal literal is parsed through a float on the way into a fixed-point core.
+fn script_from_buffer(values: &[f64]) -> Vec<InputEvent> {
+    values
+        .chunks_exact(SCRIPT_STRIDE)
+        .map(|c| {
+            let component = |v: f64| ratio(v.clamp(-1000.0, 1000.0) as i32, 1000);
+            let (dx, dy) = (component(c[2]), component(c[3]));
+            InputEvent {
+                tick: c[0].clamp(0.0, f64::from(u32::MAX)) as u32,
+                entity_id: 0,
+                action: if c[1] == ACTION_MOVE {
+                    InputAction::Move { dx, dy }
+                } else if c[1] == ACTION_FIRE {
+                    InputAction::Fire {
+                        dir_x: dx,
+                        dir_y: dy,
+                    }
+                } else {
+                    InputAction::Stop
+                },
+            }
+        })
+        .collect()
+}
+
+/// The move-then-stop script every scenario ran before authoring existed.
+///
+/// Kept as the fallback for an empty script buffer, so every hash pinned in Phases 0
+/// to 4 reproduces without the caller having to restate the script that produced it.
+fn default_script(spec: &BuildScenario) -> Vec<InputEvent> {
+    let mut script = vec![InputEvent {
         tick: spec.move_from_tick,
         entity_id: 0,
         action: InputAction::Move {
@@ -82,12 +182,27 @@ pub fn build_scenario(spec: &BuildScenario) -> Scenario {
         },
     }];
     if spec.stop_at_tick > spec.move_from_tick {
-        input_script.push(InputEvent {
+        script.push(InputEvent {
             tick: spec.stop_at_tick,
             entity_id: 0,
             action: InputAction::Stop,
         });
     }
+    script
+}
+
+/// Builds the one-entity scenario, optionally with an authored input script.
+///
+/// The world holds a single controllable body, so a scenario carries one entity and
+/// one script rather than a list of each. That is the simulation's actual shape, and
+/// an editor offering more entities than it integrates would be reporting on bodies
+/// that never moved.
+pub fn build_scenario_with_script(spec: &BuildScenario, script: &[f64]) -> Scenario {
+    let input_script = if script.len() < SCRIPT_STRIDE {
+        default_script(spec)
+    } else {
+        script_from_buffer(script)
+    };
 
     let mut scenario = Scenario {
         tick_rate: spec.tick_rate.max(1),
@@ -105,12 +220,17 @@ pub fn build_scenario(spec: &BuildScenario) -> Scenario {
             start_y: Fx::ZERO,
             max_speed: from_int(spec.max_speed),
             accel: from_int(spec.accel),
-            radius: from_int(1),
+            radius: from_int(DEFAULT_RADIUS),
         }],
         input_script,
     };
     scenario.sort_inputs();
     scenario
+}
+
+/// The scenario with its built-in move-then-stop script.
+pub fn build_scenario(spec: &BuildScenario) -> Scenario {
+    build_scenario_with_script(spec, &[])
 }
 
 /// Named network presets, resolved by index so the boundary stays numeric.
@@ -815,6 +935,208 @@ mod tests {
         assert_eq!(decoded.len(), 2);
         assert_eq!(decoded[0], decoded[1]);
         assert_eq!(decoded[0].interpolation_delay_ticks, 3);
+    }
+
+    #[test]
+    fn a_scenario_survives_a_round_trip_through_the_buffer() {
+        let original = spec();
+        let decoded = scenario_from_buffer(&scenario_to_buffer(&original));
+        assert_eq!(
+            build_scenario(&decoded),
+            build_scenario(&original),
+            "a scenario changed shape crossing the buffer"
+        );
+        assert_eq!(scenario_to_buffer(&original).len(), SCENARIO_LEN);
+    }
+
+    /// Every slot must reach a distinct field. Perturbing one and finding the scenario
+    /// unchanged means two indices are crossed or one is unread.
+    #[test]
+    fn every_scenario_slot_changes_the_built_scenario() {
+        let values = scenario_to_buffer(&BuildScenario {
+            stop_at_tick: 150,
+            ..spec()
+        });
+        let base = build_scenario(&scenario_from_buffer(&values));
+        for i in 0..SCENARIO_LEN {
+            // both directions, because a field sitting on a clamp bound only moves one
+            // way. friction is already at its ceiling and the move tick at its floor,
+            // so a single-direction probe would read either as an unwired slot
+            let moved = [1.0, -1.0].iter().any(|delta| {
+                let mut perturbed = values.clone();
+                perturbed[i] += delta;
+                build_scenario(&scenario_from_buffer(&perturbed)) != base
+            });
+            assert!(moved, "slot {i} did not reach any field");
+        }
+    }
+
+    #[test]
+    fn a_short_scenario_buffer_does_not_read_past_the_end() {
+        let s = build_scenario(&scenario_from_buffer(&[64.0, 200.0]));
+        assert_eq!(s.tick_rate, 64);
+        assert_eq!(s.duration_ticks, 0);
+    }
+
+    /// An empty script buffer must reproduce the built-in script exactly, since every
+    /// hash pinned before authoring existed was produced by it.
+    #[test]
+    fn an_empty_script_falls_back_to_the_built_in_one() {
+        let spec = BuildScenario {
+            stop_at_tick: 120,
+            ..spec()
+        };
+        assert_eq!(
+            build_scenario_with_script(&spec, &[]),
+            build_scenario(&spec)
+        );
+        // a partial record cannot describe an event, so it is treated as no script
+        // rather than read past the end or padded into an input nobody wrote
+        assert_eq!(
+            build_scenario_with_script(&spec, &[10.0, ACTION_STOP, 0.0]),
+            build_scenario(&spec)
+        );
+    }
+
+    #[test]
+    fn a_script_decodes_each_action_from_its_tag() {
+        let s = build_scenario_with_script(
+            &spec(),
+            &[
+                5.0,
+                ACTION_MOVE,
+                1000.0,
+                -500.0,
+                40.0,
+                ACTION_FIRE,
+                0.0,
+                1000.0,
+                80.0,
+                ACTION_STOP,
+                0.0,
+                0.0,
+            ],
+        );
+        assert_eq!(
+            s.input_script,
+            vec![
+                InputEvent {
+                    tick: 5,
+                    entity_id: 0,
+                    action: InputAction::Move {
+                        dx: from_int(1),
+                        dy: ratio(-500, 1000),
+                    },
+                },
+                InputEvent {
+                    tick: 40,
+                    entity_id: 0,
+                    action: InputAction::Fire {
+                        dir_x: Fx::ZERO,
+                        dir_y: from_int(1),
+                    },
+                },
+                InputEvent {
+                    tick: 80,
+                    entity_id: 0,
+                    action: InputAction::Stop,
+                },
+            ]
+        );
+    }
+
+    /// Events must apply at their scheduled tick regardless of the order they arrive,
+    /// which is what `Sim` relies on when it walks the script with a cursor.
+    #[test]
+    fn an_out_of_order_script_is_sorted_by_tick() {
+        let s = build_scenario_with_script(
+            &spec(),
+            &[
+                90.0,
+                ACTION_STOP,
+                0.0,
+                0.0,
+                10.0,
+                ACTION_MOVE,
+                1000.0,
+                0.0,
+                50.0,
+                ACTION_FIRE,
+                1000.0,
+                0.0,
+            ],
+        );
+        let ticks: Vec<u32> = s.input_script.iter().map(|e| e.tick).collect();
+        assert_eq!(ticks, vec![10, 50, 90]);
+    }
+
+    /// An unrecognised tag must still produce a defined input. Dropping the event
+    /// instead would leave the body holding whatever it was doing, which reads as the
+    /// script working rather than as an event that was never understood.
+    #[test]
+    fn an_unknown_action_tag_becomes_stop() {
+        let s = build_scenario_with_script(&spec(), &[3.0, 99.0, 1000.0, 1000.0]);
+        assert_eq!(s.input_script[0].action, InputAction::Stop);
+    }
+
+    /// A shot must reach the run and be counted, otherwise the rewind limit has
+    /// nothing to act on and the constant stays the no-op Phase 4 found it to be.
+    #[test]
+    fn an_authored_shot_reaches_the_run() {
+        let spec = BuildScenario {
+            duration_ticks: 200,
+            ..spec()
+        };
+        let script = [
+            0.0,
+            ACTION_MOVE,
+            1000.0,
+            0.0,
+            // after the warmup window, since a shot inside it is not counted
+            120.0,
+            ACTION_FIRE,
+            1000.0,
+            0.0,
+        ];
+        let s = build_scenario_with_script(&spec, &script);
+        let buf = metrics_buffer(&s, NetworkSegment::average_broadband(), 7, config());
+        // shots fired sits two from the end, ahead of the two hash halves
+        assert_eq!(buf[METRICS_LEN - 4], 1.0, "the authored shot never fired");
+    }
+
+    /// The rewind limit only means something once a shot exists. Phase 4 held it out
+    /// of the sweep for exactly this reason, so the effect is asserted rather than
+    /// assumed before the constant goes back on an axis.
+    #[test]
+    fn the_rewind_limit_changes_a_shot_outcome() {
+        let spec = BuildScenario {
+            duration_ticks: 300,
+            ..spec()
+        };
+        let mut script = vec![0.0, ACTION_MOVE, 1000.0, 0.0];
+        for tick in (100..300).step_by(10) {
+            script.extend([f64::from(tick), ACTION_FIRE, 1000.0, 0.0]);
+        }
+        let s = build_scenario_with_script(&spec, &script);
+
+        let confirmed = |limit_ms: u32| {
+            let buf = metrics_buffer(
+                &s,
+                NetworkSegment::transcontinental(),
+                11,
+                NetcodeConfig {
+                    server_rewind_limit_ms: limit_ms,
+                    ..NetcodeConfig::default()
+                },
+            );
+            buf[METRICS_LEN - 3]
+        };
+
+        assert_ne!(
+            confirmed(0),
+            confirmed(400),
+            "the rewind limit did not change how many shots the server confirmed"
+        );
     }
 
     #[test]

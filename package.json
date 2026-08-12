@@ -10,8 +10,11 @@
     "test:core": "cargo test --manifest-path core/Cargo.toml",
     "test:determinism": "vitest run tests/determinism",
     "test:e2e": "playwright test",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run test:core && npm run test:determinism && npm run test:e2e"
+    "test": "npm run typecheck && npm run test:core && npm run test:determinism && npm run build && npm run test:e2e"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

@@ -51,6 +51,10 @@ jobs:
       - name: Determinism in node
         run: npm run test:determinism
 
+      # dev-server success does not imply the wasm is bundled and served correctly
+      - name: Production build
+        run: npm run build
+
       - run: npx playwright install --with-deps chromium firefox
 
       # the cross-engine gate: chromium and firefox must agree with each other and

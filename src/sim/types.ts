@@ -18,6 +18,12 @@ export const METRIC_FIELDS = [
   "packetsSent",
   "packetsDropped",
   "sampledTicks",
+  "rollbackCount",
+  "rollbackDepthMean",
+  "snapCount",
+  "hitRegistrationAccuracy",
+  "shotsFired",
+  "shotsConfirmed",
   "stateHashHigh",
   "stateHashLow",
 ] as const;
@@ -85,6 +91,119 @@ export interface CustomSegmentSpec {
   reorderPct: number;
   duplicatePct: number;
   burstLoss: boolean;
+}
+
+export const TECHNIQUE_FIELDS = [
+  "clientPrediction",
+  "serverReconciliation",
+  "entityInterpolation",
+  "extrapolation",
+  "serverRewind",
+  "rollback",
+] as const;
+
+export type TechniqueField = (typeof TECHNIQUE_FIELDS)[number];
+export type TechniqueSet = Record<TechniqueField, boolean>;
+
+/** How each technique reads in the interface, in the same order as the flags. */
+export const TECHNIQUE_LABELS: Record<TechniqueField, string> = {
+  clientPrediction: "Client prediction",
+  serverReconciliation: "Server reconciliation",
+  entityInterpolation: "Entity interpolation",
+  extrapolation: "Extrapolation",
+  serverRewind: "Server rewind",
+  rollback: "Rollback",
+};
+
+/**
+ * The tuning constants, in the order the core's `config_from_buffer` reads them.
+ *
+ * Rates and thresholds cross as permille integers rather than decimals, because the
+ * core is fixed point and parsing a decimal on the way in would route a float into
+ * the one place floats are banned.
+ */
+export interface NetcodeConfig {
+  techniques: TechniqueSet;
+  interpolationDelayTicks: number;
+  inputBufferTicks: number;
+  rollbackWindowTicks: number;
+  correctionBlendPermille: number;
+  snapThresholdPermille: number;
+  serverRewindLimitMs: number;
+  extrapolationLimitTicks: number;
+}
+
+export const CONFIG_LEN = 13;
+
+export const NO_TECHNIQUES: TechniqueSet = {
+  clientPrediction: false,
+  serverReconciliation: false,
+  entityInterpolation: false,
+  extrapolation: false,
+  serverRewind: false,
+  rollback: false,
+};
+
+export const ALL_TECHNIQUES: TechniqueSet = {
+  clientPrediction: true,
+  serverReconciliation: true,
+  entityInterpolation: true,
+  extrapolation: true,
+  serverRewind: true,
+  rollback: true,
+};
+
+/** Matches `NetcodeConfig::default()` in the core. */
+export const DEFAULT_CONFIG: NetcodeConfig = {
+  techniques: ALL_TECHNIQUES,
+  interpolationDelayTicks: 2,
+  inputBufferTicks: 2,
+  rollbackWindowTicks: 8,
+  correctionBlendPermille: 800,
+  snapThresholdPermille: 50_000,
+  serverRewindLimitMs: 200,
+  extrapolationLimitTicks: 6,
+};
+
+/** The uncompensated run every comparison is measured against. */
+export const BASELINE_CONFIG: NetcodeConfig = {
+  ...DEFAULT_CONFIG,
+  techniques: NO_TECHNIQUES,
+};
+
+/**
+ * Flattens a config into the buffer the core reads.
+ *
+ * Built from `TECHNIQUE_FIELDS` rather than by listing the flags again, so a flag
+ * cannot be written at the wrong index. `encodeConfigMatchesCoreLength` asserts the
+ * result against the core's own `config_len()`.
+ */
+export function encodeConfig(config: NetcodeConfig): Float64Array {
+  const out = new Float64Array(CONFIG_LEN);
+  TECHNIQUE_FIELDS.forEach((field, index) => {
+    out[index] = config.techniques[field] ? 1 : 0;
+  });
+  out[6] = config.interpolationDelayTicks;
+  out[7] = config.inputBufferTicks;
+  out[8] = config.rollbackWindowTicks;
+  out[9] = config.correctionBlendPermille;
+  out[10] = config.snapThresholdPermille;
+  out[11] = config.serverRewindLimitMs;
+  out[12] = config.extrapolationLimitTicks;
+  return out;
+}
+
+/** Reason codes returned by the core's `validate_config`. */
+export const CONFIG_ERRORS: Record<number, string> = {
+  1: "Reconciliation needs client prediction, since it replays predicted inputs.",
+  2: "Rollback needs client prediction, since it resimulates predicted history.",
+  3: "Interpolation delay is deeper than the state buffer that feeds it.",
+  4: "A blend rate of 1000 never converges on the server.",
+  5: "Server rewind needs a limit above zero.",
+};
+
+export function describeConfigError(code: number): string {
+  return CONFIG_ERRORS[code] ?? `Configuration rejected with code ${code}.`;
 }
 
 export function decodeMetrics(buffer: Float64Array | number[]): Metrics {

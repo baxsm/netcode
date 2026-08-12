@@ -137,13 +137,23 @@ pub struct Packet {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PacketPayload {
     /// Client to server. The input the client applied locally at `input_tick`.
+    ///
+    /// `sequence` numbers the input itself rather than the packet, so a duplicate
+    /// carries the same sequence as its original and the server can tell the two
+    /// apart from a genuinely new input.
     Input {
         entity_id: u16,
         dx: Fx,
         dy: Fx,
         input_tick: u32,
+        sequence: u32,
     },
     /// Server to client. Authoritative state for one entity.
+    ///
+    /// `last_input_sequence` is the acknowledgement reconciliation replays from: the
+    /// last client input this state already includes. Getting it wrong by one is the
+    /// defect the phase doc calls the most likely in the phase, so it is carried
+    /// explicitly rather than inferred from the tick.
     State {
         entity_id: u16,
         x: Fx,
@@ -151,6 +161,7 @@ pub enum PacketPayload {
         vx: Fx,
         vy: Fx,
         server_tick: u32,
+        last_input_sequence: u32,
     },
 }
 
@@ -344,6 +355,7 @@ mod tests {
             dx: Fx::ZERO,
             dy: Fx::ZERO,
             input_tick: n,
+            sequence: n,
         }
     }
 

@@ -1,22 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { SimPool } from "./workers/pool";
-import { DEFAULT_SCENARIO, SEGMENT_PRESETS, type Metrics } from "./sim/types";
-
-interface Row {
-  preset: string;
-  metrics: Metrics;
-}
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SimPool, type Comparison } from "./workers/pool";
+import TechniqueControls from "./components/technique-controls";
+import ComparisonTable from "./components/comparison-table";
+import PeekersPanel from "./components/peekers-panel";
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_SCENARIO,
+  SEGMENT_PRESETS,
+  describeConfigError,
+  type NetcodeConfig,
+} from "./sim/types";
 
 type Status = "idle" | "running" | "done" | "failed";
 
-const SEEDS = [42n, 43n, 44n];
+const SEED = 42n;
 
 export default function App() {
   const poolRef = useRef<SimPool | null>(null);
-  const [rows, setRows] = useState<Row[]>([]);
+  const [config, setConfig] = useState<NetcodeConfig>(DEFAULT_CONFIG);
+  const [rows, setRows] = useState<Comparison[]>([]);
   const [version, setVersion] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
+  const [invalid, setInvalid] = useState("");
   const [progress, setProgress] = useState({ completed: 0, total: 0 });
 
   /**
@@ -39,60 +45,84 @@ export default function App() {
     };
   }, []);
 
-  const run = useCallback(async () => {
-    const pool = poolFor();
+  const run = useCallback(
+    async (using: NetcodeConfig) => {
+      const pool = poolFor();
 
-    setStatus("running");
-    setError("");
-    setRows([]);
-    setProgress({ completed: 0, total: SEGMENT_PRESETS.length * SEEDS.length });
+      setStatus("running");
+      setError("");
+      setProgress({ completed: 0, total: SEGMENT_PRESETS.length * 2 });
 
-    try {
-      setVersion(await pool.version());
+      try {
+        setVersion(await pool.version());
 
-      const indices = SEGMENT_PRESETS.map((_, i) => i);
-      const results = await pool.runMany(DEFAULT_SCENARIO, indices, SEEDS, setProgress);
+        // the core rejects contradictory combinations, so a run is never spent
+        // producing a number that quietly came from a different configuration
+        const code = await pool.validate(using);
+        if (code !== 0) {
+          setInvalid(describeConfigError(code));
+          setRows([]);
+          setStatus("done");
+          return;
+        }
+        setInvalid("");
 
-      // results come back in job order: every seed for segment 0, then segment 1...
-      const next: Row[] = SEGMENT_PRESETS.map((preset, segment) => {
-        const first = results[segment * SEEDS.length];
-        if (!first) throw new Error(`no result for ${preset}`);
-        return { preset, metrics: first };
-      });
+        const indices = SEGMENT_PRESETS.map((_, i) => i);
+        setRows(await pool.runComparison(DEFAULT_SCENARIO, indices, SEED, using, setProgress));
+        setStatus("done");
+      } catch (cause) {
+        // a run in flight when the pool is disposed rejects, and reporting that as a
+        // failure would show an error the user never caused
+        if (poolRef.current !== pool) return;
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setStatus("failed");
+      }
+    },
+    [poolFor],
+  );
 
-      setRows(next);
-      setStatus("done");
-    } catch (cause) {
-      // a run in flight when the pool is disposed rejects, and reporting that as a
-      // failure would show an error the user never caused
-      if (poolRef.current !== pool) return;
-      setError(cause instanceof Error ? cause.message : String(cause));
-      setStatus("failed");
-    }
-  }, [poolFor]);
-
+  // the initial run only. `config` is deliberately read through the ref rather than
+  // depended on, because re-running on every toggle would fire a sweep mid-edit
+  const initial = useRef(config);
   useEffect(() => {
-    void run();
+    void run(initial.current);
   }, [run]);
+
+  const enabledCount = useMemo(
+    () => Object.values(config.techniques).filter(Boolean).length,
+    [config.techniques],
+  );
+
+  const running = status === "running";
 
   return (
     <main>
       <header>
         <h1>netcode</h1>
         <p>
-          Baseline run with no latency compensation. Every preset shares one seeded
-          scenario, so the differences below are the network conditions alone.
+          Every network preset run twice on one seeded scenario: once with no
+          compensation, once with the techniques below. The difference between the two
+          is what these techniques buy on that link.
         </p>
       </header>
 
+      <TechniqueControls
+        config={config}
+        disabled={running}
+        onChange={setConfig}
+        onRun={() => void run(config)}
+      />
+
       <section className="controls">
-        <button type="button" onClick={() => void run()} disabled={status === "running"}>
-          {status === "running" ? "Running" : "Run again"}
+        <button type="button" onClick={() => void run(config)} disabled={running}>
+          {running ? "Running" : "Run comparison"}
         </button>
-        {version ? <code data-testid="version">{version}</code> : null}
+        <span className="muted">
+          {enabledCount} of 6 techniques on, seed {String(SEED)}
+        </span>
       </section>
 
-      {status === "running" ? (
+      {running ? (
         <p className="state" data-testid="progress">
           {progress.completed} of {progress.total} runs
         </p>
@@ -104,42 +134,24 @@ export default function App() {
         </p>
       ) : null}
 
-      {rows.length > 0 ? (
-        <table data-testid="results">
-          <caption>Seed 42, {DEFAULT_SCENARIO.durationTicks} ticks at {DEFAULT_SCENARIO.tickRate} Hz</caption>
-          <thead>
-            <tr>
-              <th scope="col">Network</th>
-              <th scope="col">Divergence mean</th>
-              <th scope="col">Divergence p99</th>
-              <th scope="col">Corrections</th>
-              <th scope="col">Input latency</th>
-              <th scope="col">Packets lost</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ preset, metrics }) => (
-              <tr key={preset}>
-                <th scope="row">{preset}</th>
-                <td>{metrics.divergenceMean.toFixed(2)}</td>
-                <td>{metrics.divergenceP99.toFixed(2)}</td>
-                <td>{metrics.correctionCount}</td>
-                <td>{metrics.inputLatencyMeanMs.toFixed(1)} ms</td>
-                <td>
-                  {metrics.packetsDropped}
-                  <span className="muted"> / {metrics.packetsSent}</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {invalid ? (
+        <p className="state error" data-testid="invalid" role="alert">
+          {invalid}
+        </p>
       ) : null}
 
-      {status === "done" ? (
-        <p className="note">
-          Divergence is world units between the server and client bodies. It grows with
-          latency and loss because nothing is correcting for either yet.
-        </p>
+      {rows.length > 0 && !invalid ? (
+        <ComparisonTable rows={rows} scenario={DEFAULT_SCENARIO} seed={SEED} />
+      ) : null}
+
+      <PeekersPanel pool={poolFor} />
+
+      {version ? (
+        <footer>
+          {/* the build flags travel with every result, because a number is only
+              meaningful next to the build that produced it */}
+          <code data-testid="version">core {version}</code>
+        </footer>
       ) : null}
     </main>
   );

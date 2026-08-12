@@ -8,11 +8,25 @@
 
 import * as Comlink from "comlink";
 import type { SimApi } from "./sim-worker";
-import type { CustomSegmentSpec, Metrics, ScenarioSpec, Snapshot } from "../sim/types";
+import {
+  BASELINE_CONFIG,
+  type CustomSegmentSpec,
+  type Metrics,
+  type NetcodeConfig,
+  type ScenarioSpec,
+  type Snapshot,
+} from "../sim/types";
 
 export interface SweepProgress {
   completed: number;
   total: number;
+}
+
+/** One preset measured twice: uncompensated, and with the chosen techniques. */
+export interface Comparison {
+  segmentIndex: number;
+  baseline: Metrics;
+  configured: Metrics;
 }
 
 interface Slot {
@@ -76,32 +90,82 @@ export class SimPool {
     return this.withSlot((api) => api.version());
   }
 
-  runOne(scenario: ScenarioSpec, segmentIndex: number, seed: bigint): Promise<Metrics> {
-    return this.withSlot((api) => api.runOne(scenario, segmentIndex, seed));
+  runOne(
+    scenario: ScenarioSpec,
+    segmentIndex: number,
+    seed: bigint,
+    config: NetcodeConfig,
+  ): Promise<Metrics> {
+    return this.withSlot((api) => api.runOne(scenario, segmentIndex, seed, config));
   }
 
   runCustom(
     scenario: ScenarioSpec,
     segment: CustomSegmentSpec,
     seed: bigint,
+    config: NetcodeConfig,
   ): Promise<Metrics> {
-    return this.withSlot((api) => api.runCustom(scenario, segment, seed));
+    return this.withSlot((api) => api.runCustom(scenario, segment, seed, config));
   }
 
   runSnapshots(
     scenario: ScenarioSpec,
     segmentIndex: number,
     seed: bigint,
+    config: NetcodeConfig,
   ): Promise<Snapshot[]> {
-    return this.withSlot((api) => api.runSnapshots(scenario, segmentIndex, seed));
+    return this.withSlot((api) => api.runSnapshots(scenario, segmentIndex, seed, config));
+  }
+
+  validate(config: NetcodeConfig): Promise<number> {
+    return this.withSlot((api) => api.validate(config));
+  }
+
+  peekersAdvantage(rttMs: number, tickRate: number, clientFps: number): Promise<number> {
+    return this.withSlot((api) => api.peekersAdvantage(rttMs, tickRate, clientFps));
   }
 
   checkDeterminism(
     scenario: ScenarioSpec,
     segmentIndex: number,
     seed: bigint,
+    config: NetcodeConfig,
   ): Promise<bigint> {
-    return this.withSlot((api) => api.checkDeterminism(scenario, segmentIndex, seed));
+    return this.withSlot((api) => api.checkDeterminism(scenario, segmentIndex, seed, config));
+  }
+
+  /**
+   * Every preset run twice, uncompensated and configured, against the same seed.
+   *
+   * Pairing the two here rather than in the caller keeps them on the same seed and
+   * scenario, which is the only way the difference between them means anything.
+   */
+  async runComparison(
+    scenario: ScenarioSpec,
+    segmentIndices: readonly number[],
+    seed: bigint,
+    config: NetcodeConfig,
+    onProgress?: (progress: SweepProgress) => void,
+  ): Promise<Comparison[]> {
+    const total = segmentIndices.length * 2;
+    let completed = 0;
+
+    const step = async <T>(work: Promise<T>): Promise<T> => {
+      const value = await work;
+      completed += 1;
+      onProgress?.({ completed, total });
+      return value;
+    };
+
+    return Promise.all(
+      segmentIndices.map(async (segmentIndex) => {
+        const [baseline, configured] = await Promise.all([
+          step(this.runOne(scenario, segmentIndex, seed, BASELINE_CONFIG)),
+          step(this.runOne(scenario, segmentIndex, seed, config)),
+        ]);
+        return { segmentIndex, baseline, configured };
+      }),
+    );
   }
 
   /**
@@ -114,6 +178,7 @@ export class SimPool {
     scenario: ScenarioSpec,
     segmentIndices: readonly number[],
     seeds: readonly bigint[],
+    config: NetcodeConfig,
     onProgress?: (progress: SweepProgress) => void,
   ): Promise<Metrics[]> {
     const jobs: Array<{ segment: number; seed: bigint }> = [];
@@ -128,7 +193,7 @@ export class SimPool {
 
     await Promise.all(
       jobs.map(async (job, index) => {
-        results[index] = await this.runOne(scenario, job.segment, job.seed);
+        results[index] = await this.runOne(scenario, job.segment, job.seed, config);
         completed += 1;
         onProgress?.({ completed, total: jobs.length });
       }),

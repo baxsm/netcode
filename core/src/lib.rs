@@ -4,13 +4,16 @@
 //! async. A run is fully determined by the arguments passed in.
 
 pub mod boundary;
+pub mod config;
 pub mod fx;
 pub mod hash;
 pub mod net;
+pub mod peekers;
 pub mod rng;
 pub mod run;
 pub mod scenario;
 pub mod sim;
+pub mod techniques;
 
 use wasm_bindgen::prelude::*;
 
@@ -52,6 +55,35 @@ pub fn metrics_len() -> u32 {
     boundary::METRICS_LEN as u32
 }
 
+/// Number of values the config buffer passed to the run functions must hold.
+#[wasm_bindgen]
+pub fn config_len() -> u32 {
+    boundary::CONFIG_LEN as u32
+}
+
+/// Rejects a configuration that cannot mean what it says, returning the reason code
+/// or zero when it is valid.
+///
+/// Exposed so the UI can refuse a combination before spending a run on it, rather
+/// than showing a number produced by a config that quietly did something else.
+#[wasm_bindgen]
+pub fn validate_config(config: Vec<f64>) -> u32 {
+    match boundary::config_from_buffer(&config).validate() {
+        Ok(()) => 0,
+        Err(e) => e.code(),
+    }
+}
+
+/// Peeker's advantage in milliseconds, reproducing Riot's published model.
+#[wasm_bindgen]
+pub fn peekers_advantage_ms(rtt_ms: u32, tick_rate: u32, client_fps: u32) -> f64 {
+    fx::to_f64_for_display(peekers::peekers_advantage_ms(peekers::PeekConditions {
+        rtt_ms,
+        tick_rate,
+        client_fps,
+    }))
+}
+
 /// Values per snapshot record in the buffer `run_snapshots` returns.
 #[wasm_bindgen]
 pub fn snapshot_stride() -> u32 {
@@ -80,6 +112,7 @@ pub fn run_metrics(
     bounds: i32,
     move_from_tick: u32,
     stop_at_tick: u32,
+    config: Vec<f64>,
 ) -> Vec<f64> {
     let scenario = boundary::build_scenario(&boundary::BuildScenario {
         tick_rate,
@@ -91,7 +124,12 @@ pub fn run_metrics(
         move_from_tick,
         stop_at_tick,
     });
-    boundary::metrics_buffer(&scenario, boundary::segment_by_index(segment_index), seed)
+    boundary::metrics_buffer(
+        &scenario,
+        boundary::segment_by_index(segment_index),
+        seed,
+        boundary::config_from_buffer(&config),
+    )
 }
 
 /// Same run, against a network described directly rather than by preset.
@@ -113,6 +151,7 @@ pub fn run_metrics_custom(
     reorder_pct: u32,
     duplicate_pct: u32,
     burst_loss: bool,
+    config: Vec<f64>,
 ) -> Vec<f64> {
     let scenario = boundary::build_scenario(&boundary::BuildScenario {
         tick_rate,
@@ -132,7 +171,12 @@ pub fn run_metrics_custom(
         duplicate_pct,
         burst_loss,
     });
-    boundary::metrics_buffer(&scenario, segment, seed)
+    boundary::metrics_buffer(
+        &scenario,
+        segment,
+        seed,
+        boundary::config_from_buffer(&config),
+    )
 }
 
 /// Per-tick server and client positions, for the replay view.
@@ -149,6 +193,7 @@ pub fn run_snapshots(
     bounds: i32,
     move_from_tick: u32,
     stop_at_tick: u32,
+    config: Vec<f64>,
 ) -> Vec<f64> {
     let scenario = boundary::build_scenario(&boundary::BuildScenario {
         tick_rate,
@@ -160,7 +205,12 @@ pub fn run_snapshots(
         move_from_tick,
         stop_at_tick,
     });
-    boundary::snapshot_buffer(&scenario, boundary::segment_by_index(segment_index), seed)
+    boundary::snapshot_buffer(
+        &scenario,
+        boundary::segment_by_index(segment_index),
+        seed,
+        boundary::config_from_buffer(&config),
+    )
 }
 
 #[cfg(test)]

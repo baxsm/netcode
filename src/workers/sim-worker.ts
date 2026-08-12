@@ -2,18 +2,24 @@
 
 import * as Comlink from "comlink";
 import init, {
+  config_len,
   metrics_len,
+  peekers_advantage_ms,
   run_metrics,
   run_metrics_custom,
   run_snapshots,
+  validate_config,
   version,
 } from "../../core/pkg-web/netcode_core.js";
 import {
+  CONFIG_LEN,
   decodeMetrics,
   decodeSnapshots,
+  encodeConfig,
   METRIC_FIELDS,
   type CustomSegmentSpec,
   type Metrics,
+  type NetcodeConfig,
   type ScenarioSpec,
   type Snapshot,
 } from "../sim/types";
@@ -29,6 +35,12 @@ function load(): Promise<void> {
           `core reports ${coreLen} metrics but the mirror declares ${METRIC_FIELDS.length}`,
         );
       }
+      const coreConfigLen = config_len();
+      if (coreConfigLen !== CONFIG_LEN) {
+        throw new Error(
+          `core reads ${coreConfigLen} config values but the mirror sends ${CONFIG_LEN}`,
+        );
+      }
     });
   }
   return ready;
@@ -40,7 +52,12 @@ const api = {
     return version();
   },
 
-  async runOne(scenario: ScenarioSpec, segmentIndex: number, seed: bigint): Promise<Metrics> {
+  async runOne(
+    scenario: ScenarioSpec,
+    segmentIndex: number,
+    seed: bigint,
+    config: NetcodeConfig,
+  ): Promise<Metrics> {
     await load();
     return decodeMetrics(
       run_metrics(
@@ -54,6 +71,7 @@ const api = {
         scenario.bounds,
         scenario.moveFromTick,
         scenario.stopAtTick,
+        encodeConfig(config),
       ),
     );
   },
@@ -62,6 +80,7 @@ const api = {
     scenario: ScenarioSpec,
     segment: CustomSegmentSpec,
     seed: bigint,
+    config: NetcodeConfig,
   ): Promise<Metrics> {
     await load();
     return decodeMetrics(
@@ -81,6 +100,7 @@ const api = {
         segment.reorderPct,
         segment.duplicatePct,
         segment.burstLoss,
+        encodeConfig(config),
       ),
     );
   },
@@ -89,6 +109,7 @@ const api = {
     scenario: ScenarioSpec,
     segmentIndex: number,
     seed: bigint,
+    config: NetcodeConfig,
   ): Promise<Snapshot[]> {
     await load();
     return decodeSnapshots(
@@ -103,16 +124,29 @@ const api = {
         scenario.bounds,
         scenario.moveFromTick,
         scenario.stopAtTick,
+        encodeConfig(config),
       ),
     );
+  },
+
+  /** Zero when the configuration is usable, otherwise the core's reason code. */
+  async validate(config: NetcodeConfig): Promise<number> {
+    await load();
+    return validate_config(encodeConfig(config));
+  },
+
+  async peekersAdvantage(rttMs: number, tickRate: number, clientFps: number): Promise<number> {
+    await load();
+    return peekers_advantage_ms(rttMs, tickRate, clientFps);
   },
 
   async checkDeterminism(
     scenario: ScenarioSpec,
     segmentIndex: number,
     seed: bigint,
+    config: NetcodeConfig,
   ): Promise<bigint> {
-    const metrics = await api.runOne(scenario, segmentIndex, seed);
+    const metrics = await api.runOne(scenario, segmentIndex, seed, config);
     return metrics.stateHash;
   },
 };

@@ -92,6 +92,14 @@ impl Scenario {
         ratio(1000, self.tick_rate as i32)
     }
 
+    /// How close the server and the client's view must be for a shot to register.
+    ///
+    /// Taken from the firing entity's radius rather than a constant, so a scenario
+    /// with a larger body is not judged against a hitbox it does not have.
+    pub fn hit_tolerance(&self) -> Fx {
+        self.entities.first().map_or(Fx::ZERO, |e| e.radius)
+    }
+
     pub fn ticks_for_ms(&self, ms: u32) -> u32 {
         if self.tick_rate == 0 {
             return 0;

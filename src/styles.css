@@ -130,6 +130,147 @@ tbody tr:last-child td {
   color: var(--muted);
 }
 
+h2 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: -0.005em;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin: 1.75rem 0 0;
+  background: var(--panel);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+  font-weight: 500;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8125rem;
+}
+
+button.ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.toggles {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.4rem 1rem;
+}
+
+.toggles label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  padding: 0.25rem 0;
+}
+
+.toggles input {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.knobs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem 1.5rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.25rem;
+}
+
+.knob label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  margin-bottom: 0.35rem;
+}
+
+.knob-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.knob input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* a constant whose technique is off still crosses the boundary, it just has
+   nothing to act on, so it is dimmed rather than hidden */
+.knob.inactive {
+  opacity: 0.45;
+}
+
+.knob-note {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 0.2rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+footer {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+td .value {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
+td .change {
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 0.1rem;
+}
+
+.change.better {
+  color: #3fb950;
+}
+
+.change.worse {
+  color: var(--warn);
+}
+
+.change.flat {
+  color: var(--muted);
+}
+
 .note {
   margin-top: 1.25rem;
   color: var(--muted);
@@ -142,10 +283,25 @@ tbody tr:last-child td {
     padding: 1.5rem 1rem 3rem;
   }
 
-  /* the table is the content, so it scrolls rather than wrapping into a
-     column of unreadable fragments */
+  .panel {
+    padding: 1rem;
+  }
+
+  .panel-head {
+    flex-wrap: wrap;
+  }
+
+  /* the wrapper is the only scroller. making the table itself scroll as well
+     would nest two of them, and the outer one would then never overflow */
   table {
-    display: block;
-    overflow-x: auto;
+    min-width: 34rem;
+  }
+
+  /* the row label column is fixed at 12rem on desktop for digit alignment, which
+     is most of a phone screen. narrower here so the numbers stay on screen */
+  thead th:first-child,
+  th[scope="row"] {
+    width: auto;
+    min-width: 7rem;
   }
 }

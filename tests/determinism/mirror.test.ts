@@ -1,25 +1,39 @@
 import { describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
 import {
-  decodeMetrics,
-  decodeSnapshots,
+  ALL_TECHNIQUES,
+  BASELINE_CONFIG,
+  CONFIG_LEN,
+  DEFAULT_CONFIG,
   DEFAULT_SCENARIO,
   METRIC_FIELDS,
+  NO_TECHNIQUES,
   SEGMENT_PRESETS,
   SNAPSHOT_STRIDE,
+  TECHNIQUE_FIELDS,
+  decodeMetrics,
+  decodeSnapshots,
+  describeConfigError,
+  encodeConfig,
+  type NetcodeConfig,
 } from "../../src/sim/types";
 
 const require = createRequire(import.meta.url);
 const core = require("../../core/pkg-node/netcode_core.js") as {
   metrics_len: () => number;
+  config_len: () => number;
   snapshot_stride: () => number;
   segment_names: () => string;
+  validate_config: (config: Float64Array) => number;
+  peekers_advantage_ms: (rtt: number, tick: number, fps: number) => number;
   run_metrics: (...args: never[]) => Float64Array;
   run_snapshots: (...args: never[]) => Float64Array;
 };
 
 const s = DEFAULT_SCENARIO;
-const metricsFor = (segment: number, seed: bigint) =>
+
+/** The uncompensated run, which is what the original assertions were written against. */
+const metricsFor = (segment: number, seed: bigint, config: NetcodeConfig = BASELINE_CONFIG) =>
   (core.run_metrics as unknown as (...a: unknown[]) => Float64Array)(
     seed,
     segment,
@@ -31,6 +45,7 @@ const metricsFor = (segment: number, seed: bigint) =>
     s.bounds,
     s.moveFromTick,
     s.stopAtTick,
+    encodeConfig(config),
   );
 
 describe("mirror agrees with the core", () => {
@@ -71,10 +86,27 @@ describe("decoded metrics are meaningful", () => {
     expect(decoded.stateHash).toBeGreaterThan(0n);
   });
 
-  it("reports no loss and no divergence on a perfect link", () => {
+  it("reports no loss on a perfect link", () => {
     const decoded = decodeMetrics(metricsFor(0, 42n));
     expect(decoded.packetsDropped).toBe(0);
-    expect(decoded.divergenceMax).toBe(0);
+  });
+
+  /**
+   * An uncompensated client renders the last state it received, so it trails the
+   * server by the transit time even when nothing is lost. That lag is what
+   * prediction exists to remove, not a defect, and the pair of assertions below
+   * pins both halves of it.
+   */
+  it("lags by under a tick without prediction, and not at all with it", () => {
+    const uncompensated = decodeMetrics(metricsFor(0, 42n, BASELINE_CONFIG));
+    expect(uncompensated.divergenceMax).toBeGreaterThan(0);
+    expect(uncompensated.divergenceMax).toBeLessThan(2);
+
+    const predicted = decodeMetrics(
+      metricsFor(0, 42n, { ...DEFAULT_CONFIG, techniques: ALL_TECHNIQUES }),
+    );
+    expect(predicted.divergenceMax).toBe(0);
+    expect(predicted.correctionCount).toBe(0);
   });
 
   it("reports worse divergence on a hostile link than a clean one", () => {
@@ -137,6 +169,115 @@ describe("decoded metrics are meaningful", () => {
   });
 });
 
+describe("config crosses the boundary intact", () => {
+  it("sends as many values as the core reads", () => {
+    expect(core.config_len()).toBe(CONFIG_LEN);
+    expect(encodeConfig(DEFAULT_CONFIG)).toHaveLength(CONFIG_LEN);
+  });
+
+  it("writes the technique flags in the order the core unpacks them", () => {
+    // one technique on at a time, so a crossed pair cannot pass. the core reports a
+    // reason code for the combinations it rejects, and a bit landing on the wrong
+    // field changes which code comes back
+    TECHNIQUE_FIELDS.forEach((field, index) => {
+      const buffer = encodeConfig({
+        ...DEFAULT_CONFIG,
+        techniques: { ...NO_TECHNIQUES, [field]: true },
+      });
+      expect(buffer[index], `${field} should occupy slot ${index}`).toBe(1);
+      expect(buffer.slice(0, 6).reduce((a, b) => a + b, 0)).toBe(1);
+    });
+  });
+
+  it("accepts the default configuration", () => {
+    expect(core.validate_config(encodeConfig(DEFAULT_CONFIG))).toBe(0);
+    expect(core.validate_config(encodeConfig(BASELINE_CONFIG))).toBe(0);
+  });
+
+  it("rejects reconciliation without prediction", () => {
+    const code = core.validate_config(
+      encodeConfig({
+        ...DEFAULT_CONFIG,
+        techniques: { ...NO_TECHNIQUES, serverReconciliation: true },
+      }),
+    );
+    expect(code).toBe(1);
+    expect(describeConfigError(code)).toMatch(/prediction/i);
+  });
+
+  it("rejects rollback without prediction", () => {
+    expect(
+      core.validate_config(
+        encodeConfig({
+          ...DEFAULT_CONFIG,
+          techniques: { ...NO_TECHNIQUES, rollback: true },
+        }),
+      ),
+    ).toBe(2);
+  });
+
+  it("describes an unknown reason code without throwing", () => {
+    expect(describeConfigError(99)).toContain("99");
+  });
+
+  it("changes the result when the techniques change", () => {
+    const off = decodeMetrics(metricsFor(4, 42n, BASELINE_CONFIG));
+    const on = decodeMetrics(
+      metricsFor(4, 42n, { ...DEFAULT_CONFIG, techniques: ALL_TECHNIQUES }),
+    );
+    expect(on.stateHash).not.toBe(off.stateHash);
+  });
+
+  it("changes the result when a constant changes", () => {
+    const a = decodeMetrics(metricsFor(4, 42n, DEFAULT_CONFIG));
+    const b = decodeMetrics(
+      metricsFor(4, 42n, { ...DEFAULT_CONFIG, correctionBlendPermille: 200 }),
+    );
+    expect(a.stateHash).not.toBe(b.stateHash);
+  });
+
+  it("keeps hit registration accuracy a fraction", () => {
+    const decoded = decodeMetrics(metricsFor(6, 11n, DEFAULT_CONFIG));
+    expect(decoded.hitRegistrationAccuracy).toBeGreaterThanOrEqual(0);
+    expect(decoded.hitRegistrationAccuracy).toBeLessThanOrEqual(1);
+    expect(decoded.shotsConfirmed).toBeLessThanOrEqual(decoded.shotsFired);
+  });
+
+  it("never rolls back further than the configured window", () => {
+    const window = 4;
+    const decoded = decodeMetrics(
+      metricsFor(6, 11n, {
+        ...DEFAULT_CONFIG,
+        techniques: ALL_TECHNIQUES,
+        rollbackWindowTicks: window,
+      }),
+    );
+    expect(decoded.rollbackDepthMean).toBeLessThanOrEqual(window);
+  });
+});
+
+describe("peekers advantage reproduces the published figures", () => {
+  // 2 ms absolute, matching the core. the article rounds its figures and says it
+  // hand-waves the buffering term, so an exact match would be false precision
+  const TOLERANCE = 2;
+
+  it.each([
+    ["baseline", 100, 64, 60, 181],
+    ["riot direct at 128 tick", 75, 128, 60, 141],
+    ["144 fps client", 35, 128, 144, 71],
+  ])("matches %s", (_label, rtt, tick, fps, published) => {
+    const computed = core.peekers_advantage_ms(rtt, tick, fps);
+    expect(Math.abs(computed - published)).toBeLessThanOrEqual(TOLERANCE);
+  });
+
+  it("falls as each published lever improves", () => {
+    const base = core.peekers_advantage_ms(100, 64, 60);
+    expect(core.peekers_advantage_ms(50, 64, 60)).toBeLessThan(base);
+    expect(core.peekers_advantage_ms(100, 128, 60)).toBeLessThan(base);
+    expect(core.peekers_advantage_ms(100, 64, 144)).toBeLessThan(base);
+  });
+});
+
 describe("snapshots", () => {
   it("decodes one record per tick", () => {
     const raw = (core.run_snapshots as unknown as (...a: unknown[]) => Float64Array)(
@@ -150,6 +291,7 @@ describe("snapshots", () => {
       s.bounds,
       s.moveFromTick,
       s.stopAtTick,
+      encodeConfig(BASELINE_CONFIG),
     );
     const decoded = decodeSnapshots(raw);
     expect(decoded).toHaveLength(50);
@@ -169,6 +311,7 @@ describe("snapshots", () => {
       s.bounds,
       s.moveFromTick,
       s.stopAtTick,
+      encodeConfig(BASELINE_CONFIG),
     );
     const decoded = decodeSnapshots(raw);
     const first = decoded[0];

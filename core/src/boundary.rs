@@ -9,6 +9,7 @@
 use crate::config::{NetcodeConfig, TechniqueSet};
 use crate::fx::{from_int, ratio, to_f64_for_display, Fx};
 use crate::net::{LossModel, NetworkSegment};
+use crate::replay::{replay, ReplayRequest};
 use crate::run::{run, RunRequest};
 use crate::scenario::{EntityKind, EntitySpec, InputAction, InputEvent, Scenario, WorldConfig};
 
@@ -26,6 +27,26 @@ pub const CONFIG_LEN: usize = 13;
 
 /// Values per snapshot: tick, then server x/y/vx/vy, then client x/y/vx/vy.
 pub const SNAPSHOT_STRIDE: usize = 9;
+
+/// Values per client inside a replay frame.
+///
+/// Laid out as: x, y, ghost tick, ghost x, ghost y, pre-correction x, pre-correction
+/// y, correction magnitude, snapped, rollback depth.
+pub const FRAME_CLIENT_STRIDE: usize = 10;
+
+/// Values per replay frame: tick, server x, server y, rewind target, then one block
+/// of `FRAME_CLIENT_STRIDE` per client.
+pub const FRAME_STRIDE: usize = 4 + FRAME_CLIENT_STRIDE * crate::replay::CLIENT_COUNT;
+
+/// Marks a tick field as carrying no value: a ghost before the first packet arrives,
+/// a rewind target on a tick with no shot.
+///
+/// Only ever written to a tick slot. A tick is unsigned so negative one cannot be
+/// mistaken for one, whereas a coordinate slot has no spare value at all: negative one
+/// is a position a body legitimately occupies. So presence of a ghost is read from its
+/// tick, and presence of a pre-correction position from the correction magnitude,
+/// never from the coordinates themselves.
+pub const ABSENT_TICK: f64 = -1.0;
 
 pub struct BuildScenario {
     pub tick_rate: u32,
@@ -235,6 +256,59 @@ pub fn snapshot_buffer(
     out
 }
 
+/// Replay frames as a flat buffer of `FRAME_STRIDE`-value records.
+///
+/// Velocities are not carried. The view draws positions and interpolates between
+/// captured frames for display, so a velocity crossing here would be a field nothing
+/// reads, at four extra values per frame per client.
+pub fn frame_buffer(
+    scenario: &Scenario,
+    segment: NetworkSegment,
+    seed: u64,
+    config: NetcodeConfig,
+) -> Vec<f64> {
+    let result = replay(ReplayRequest {
+        scenario,
+        segment,
+        seed,
+        config,
+    });
+
+    let mut out = Vec::with_capacity(result.frames.len() * FRAME_STRIDE);
+    for frame in result.frames {
+        out.push(f64::from(frame.tick));
+        out.push(to_f64_for_display(frame.server.x));
+        out.push(to_f64_for_display(frame.server.y));
+        out.push(frame.rewind_target.map_or(ABSENT_TICK, f64::from));
+
+        for client in frame.clients {
+            out.push(to_f64_for_display(client.body.x));
+            out.push(to_f64_for_display(client.body.y));
+            match client.ghost {
+                Some(ghost) => {
+                    out.push(f64::from(ghost.tick));
+                    out.push(to_f64_for_display(ghost.body.x));
+                    out.push(to_f64_for_display(ghost.body.y));
+                }
+                None => {
+                    out.push(ABSENT_TICK);
+                    out.push(0.0);
+                    out.push(0.0);
+                }
+            }
+            // the coordinates are only meaningful when the magnitude is above zero,
+            // which is what the reader gates on
+            let before = client.pre_correction.unwrap_or_default();
+            out.push(to_f64_for_display(before.x));
+            out.push(to_f64_for_display(before.y));
+            out.push(to_f64_for_display(client.correction_magnitude));
+            out.push(if client.snapped { 1.0 } else { 0.0 });
+            out.push(f64::from(client.rollback_depth));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,6 +493,82 @@ mod tests {
         let a = metrics_buffer(&s, NetworkSegment::average_broadband(), 7, none);
         let b = metrics_buffer(&s, NetworkSegment::average_broadband(), 7, all);
         assert_ne!(a, b, "the config never reached the simulation");
+    }
+
+    #[test]
+    fn frame_buffer_is_a_whole_number_of_records() {
+        let s = build_scenario(&spec());
+        let buf = frame_buffer(&s, NetworkSegment::lan(), 1, config());
+        assert_eq!(buf.len() % FRAME_STRIDE, 0);
+        assert_eq!(buf.len() / FRAME_STRIDE, 200);
+    }
+
+    /// Every value must be finite. The view draws these coordinates directly, so a NaN
+    /// would put a body somewhere unrenderable rather than raise anything.
+    #[test]
+    fn every_frame_value_is_finite() {
+        let s = build_scenario(&spec());
+        for index in 0..7 {
+            let buf = frame_buffer(&s, segment_by_index(index), 5, config());
+            for (i, v) in buf.iter().enumerate() {
+                assert!(
+                    v.is_finite(),
+                    "value {i} was not finite for segment {index}"
+                );
+            }
+        }
+    }
+
+    /// The absent marker must be distinguishable from every real tick.
+    ///
+    /// A ghost tick is unsigned, so nothing legitimate can land on the sentinel. If it
+    /// could, the view would hide a real ghost or draw one that never arrived.
+    #[test]
+    fn absent_never_collides_with_a_real_tick() {
+        let s = build_scenario(&spec());
+        let buf = frame_buffer(&s, NetworkSegment::hostile(), 3, config());
+        let mut absent = 0;
+        let mut present = 0;
+        for record in buf.chunks_exact(FRAME_STRIDE) {
+            // the ghost tick sits two values into the first client's block
+            let ghost_tick = record[4 + 2];
+            if ghost_tick == ABSENT_TICK {
+                absent += 1;
+            } else {
+                assert!(ghost_tick >= 0.0, "a real ghost tick was negative");
+                present += 1;
+            }
+        }
+        assert!(absent > 0, "no frame reported an absent ghost");
+        assert!(present > 0, "no frame reported a ghost at all");
+    }
+
+    /// A pre-correction position is read through the magnitude, so the two must agree.
+    #[test]
+    fn a_correction_magnitude_marks_its_own_position() {
+        let s = build_scenario(&spec());
+        let buf = frame_buffer(&s, NetworkSegment::hostile(), 21, config());
+        let mut corrected = 0;
+        for record in buf.chunks_exact(FRAME_STRIDE) {
+            let magnitude = record[4 + 7];
+            assert!(magnitude >= 0.0, "a correction magnitude was negative");
+            if magnitude > 0.0 {
+                corrected += 1;
+            }
+        }
+        assert!(
+            corrected > 0,
+            "a hostile link recorded no correction to draw"
+        );
+    }
+
+    #[test]
+    fn the_frame_stride_covers_every_client() {
+        assert_eq!(
+            FRAME_STRIDE,
+            4 + FRAME_CLIENT_STRIDE * crate::replay::CLIENT_COUNT
+        );
+        assert_eq!(FRAME_STRIDE, 24);
     }
 
     #[test]

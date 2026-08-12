@@ -9,6 +9,7 @@ pub mod fx;
 pub mod hash;
 pub mod net;
 pub mod peekers;
+pub mod replay;
 pub mod rng;
 pub mod run;
 pub mod scenario;
@@ -88,6 +89,24 @@ pub fn peekers_advantage_ms(rtt_ms: u32, tick_rate: u32, client_fps: u32) -> f64
 #[wasm_bindgen]
 pub fn snapshot_stride() -> u32 {
     boundary::SNAPSHOT_STRIDE as u32
+}
+
+/// Values per frame record in the buffer `run_frames` returns.
+#[wasm_bindgen]
+pub fn frame_stride() -> u32 {
+    boundary::FRAME_STRIDE as u32
+}
+
+/// Clients recorded in each replay frame.
+#[wasm_bindgen]
+pub fn frame_client_count() -> u32 {
+    replay::CLIENT_COUNT as u32
+}
+
+/// The value a tick slot carries when it holds nothing.
+#[wasm_bindgen]
+pub fn absent_tick() -> f64 {
+    boundary::ABSENT_TICK
 }
 
 /// Names of the built-in network presets, tab separated. Indices match
@@ -208,6 +227,57 @@ pub fn run_snapshots(
     boundary::snapshot_buffer(
         &scenario,
         boundary::segment_by_index(segment_index),
+        seed,
+        boundary::config_from_buffer(&config),
+    )
+}
+
+/// A two-client run recorded frame by frame, for the replay view.
+///
+/// Network conditions cross directly rather than by preset index, because the view's
+/// latency, jitter and loss sliders are continuous. Re-running from the same seed with
+/// one condition changed is the whole point of the controls.
+#[allow(clippy::too_many_arguments)]
+#[wasm_bindgen]
+pub fn run_frames(
+    seed: u64,
+    tick_rate: u32,
+    duration_ticks: u32,
+    accel: i32,
+    max_speed: i32,
+    friction_permille: u32,
+    bounds: i32,
+    move_from_tick: u32,
+    stop_at_tick: u32,
+    rtt_mean_ms: u32,
+    rtt_jitter_ms: u32,
+    loss_pct: u32,
+    reorder_pct: u32,
+    duplicate_pct: u32,
+    burst_loss: bool,
+    config: Vec<f64>,
+) -> Vec<f64> {
+    let scenario = boundary::build_scenario(&boundary::BuildScenario {
+        tick_rate,
+        duration_ticks,
+        accel,
+        max_speed,
+        friction_permille,
+        bounds,
+        move_from_tick,
+        stop_at_tick,
+    });
+    let segment = boundary::custom_segment(&boundary::CustomSegment {
+        rtt_mean_ms,
+        rtt_jitter_ms,
+        loss_pct,
+        reorder_pct,
+        duplicate_pct,
+        burst_loss,
+    });
+    boundary::frame_buffer(
+        &scenario,
+        segment,
         seed,
         boundary::config_from_buffer(&config),
     )

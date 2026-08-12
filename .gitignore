@@ -8,10 +8,14 @@ core/target/
 core/pkg-web/
 core/pkg-node/
 
-# playwright artifacts
+# playwright artifacts. the snapshot baselines are committed on purpose, since they
+# are the reference a visual regression is measured against
 test-results/
 playwright-report/
 **/e2e/screenshots/
+
+# planning and session notes, local only
+docs/
 
 .env
 .env.*

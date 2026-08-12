@@ -3,6 +3,7 @@ import { SimPool, type Comparison } from "./workers/pool";
 import TechniqueControls from "./components/technique-controls";
 import ComparisonTable from "./components/comparison-table";
 import PeekersPanel from "./components/peekers-panel";
+import ReplayTheatre from "./components/replay-theatre";
 import {
   DEFAULT_CONFIG,
   DEFAULT_SCENARIO,
@@ -100,11 +101,20 @@ export default function App() {
       <header>
         <h1>netcode</h1>
         <p>
-          Every network preset run twice on one seeded scenario: once with no
-          compensation, once with the techniques below. The difference between the two
-          is what these techniques buy on that link.
+          The same moment on a lossy link, seen three ways: what the server holds, and
+          what each client draws while predicting it. Corrections flash red, rollbacks
+          violet.
         </p>
       </header>
+
+      <ReplayTheatre pool={poolFor} config={config} />
+
+      <h2 className="section-heading">Measured across every preset</h2>
+      <p className="note">
+        Every network preset run twice on one seeded scenario: once with no
+        compensation, once with the techniques below. The difference between the two is
+        what these techniques buy on that link.
+      </p>
 
       <TechniqueControls
         config={config}

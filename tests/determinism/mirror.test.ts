@@ -11,6 +11,10 @@ import {
   SEGMENT_PRESETS,
   SNAPSHOT_STRIDE,
   TECHNIQUE_FIELDS,
+  ABSENT_TICK,
+  FRAME_CLIENT_COUNT,
+  FRAME_STRIDE,
+  decodeFrames,
   decodeMetrics,
   decodeSnapshots,
   describeConfigError,
@@ -28,7 +32,32 @@ const core = require("../../core/pkg-node/netcode_core.js") as {
   peekers_advantage_ms: (rtt: number, tick: number, fps: number) => number;
   run_metrics: (...args: never[]) => Float64Array;
   run_snapshots: (...args: never[]) => Float64Array;
+  run_frames: (...args: never[]) => Float64Array;
+  frame_stride: () => number;
+  frame_client_count: () => number;
+  absent_tick: () => number;
 };
+
+/** A hostile link, which is the one that produces corrections worth drawing. */
+const framesFor = (seed: bigint, config: NetcodeConfig = DEFAULT_CONFIG) =>
+  (core.run_frames as unknown as (...a: unknown[]) => Float64Array)(
+    seed,
+    s.tickRate,
+    s.durationTicks,
+    s.accel,
+    s.maxSpeed,
+    s.frictionPermille,
+    s.bounds,
+    s.moveFromTick,
+    s.stopAtTick,
+    200,
+    80,
+    5,
+    3,
+    1,
+    true,
+    encodeConfig(config),
+  );
 
 const s = DEFAULT_SCENARIO;
 
@@ -74,6 +103,90 @@ describe("mirror agrees with the core", () => {
 
   it("rejects a snapshot buffer that is not a whole number of records", () => {
     expect(() => decodeSnapshots([1, 2, 3])).toThrow(/whole number/);
+  });
+
+  it("declares the same frame stride and client count", () => {
+    expect(core.frame_stride()).toBe(FRAME_STRIDE);
+    expect(core.frame_client_count()).toBe(FRAME_CLIENT_COUNT);
+  });
+
+  it("agrees on the absent marker", () => {
+    expect(core.absent_tick()).toBe(ABSENT_TICK);
+  });
+
+  it("rejects a frame buffer that is not a whole number of records", () => {
+    expect(() => decodeFrames([1, 2, 3])).toThrow(/whole number/);
+  });
+});
+
+describe("decoded frames are meaningful", () => {
+  const frames = decodeFrames(framesFor(42n));
+
+  it("decodes one frame per tick, in order", () => {
+    expect(frames).toHaveLength(s.durationTicks);
+    frames.forEach((frame, i) => expect(frame.tick).toBe(i));
+  });
+
+  it("records every client on every frame", () => {
+    for (const frame of frames) {
+      expect(frame.clients).toHaveLength(FRAME_CLIENT_COUNT);
+    }
+  });
+
+  it("decodes only finite positions", () => {
+    for (const frame of frames) {
+      expect(Number.isFinite(frame.server.x)).toBe(true);
+      expect(Number.isFinite(frame.server.y)).toBe(true);
+      for (const client of frame.clients) {
+        expect(Number.isFinite(client.position.x)).toBe(true);
+        expect(Number.isFinite(client.position.y)).toBe(true);
+      }
+    }
+  });
+
+  // the absent marker must survive the crossing rather than decoding as a real ghost
+  // sitting at tick -1, which would draw an authoritative marker nobody ever had
+  it("reports no ghost before the first packet arrives", () => {
+    expect(frames[0]?.clients[0]?.ghost).toBeNull();
+    const arrived = frames.findIndex((f) => f.clients[0]?.ghost != null);
+    expect(arrived).toBeGreaterThan(0);
+  });
+
+  it("never dates a ghost after its own frame", () => {
+    for (const frame of frames) {
+      for (const client of frame.clients) {
+        if (client.ghost) expect(client.ghost.tick).toBeLessThanOrEqual(frame.tick);
+      }
+    }
+  });
+
+  it("pairs every pre-correction position with a magnitude", () => {
+    for (const frame of frames) {
+      for (const client of frame.clients) {
+        expect(client.preCorrection != null).toBe(client.correctionMagnitude > 0);
+      }
+    }
+  });
+
+  it("produces corrections for the view to draw", () => {
+    const corrected = frames.filter((f) => (f.clients[0]?.correctionMagnitude ?? 0) > 0);
+    expect(corrected.length).toBeGreaterThan(0);
+  });
+
+  it("reproduces the same frames from the same seed", () => {
+    expect(decodeFrames(framesFor(42n))).toEqual(frames);
+  });
+
+  it("produces different frames from a different seed", () => {
+    expect(decodeFrames(framesFor(43n))).not.toEqual(frames);
+  });
+
+  it("leaves the viewer unreconciled", () => {
+    for (const frame of frames) {
+      const viewer = frame.clients[1];
+      expect(viewer?.correctionMagnitude).toBe(0);
+      expect(viewer?.rollbackDepth).toBe(0);
+    }
   });
 });
 

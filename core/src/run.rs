@@ -73,8 +73,12 @@ pub struct RunResult {
 
 /// A world of one controllable body. Phase 2 widens this; keeping it to one entity
 /// here keeps the divergence measurement unambiguous.
-struct Sim {
-    body: Body,
+///
+/// Public because `replay.rs` integrates the same bodies. A second copy of this would
+/// let the replay drift from the numbers, and the drift would look like a rendering
+/// bug rather than two integrators disagreeing.
+pub struct Sim {
+    pub body: Body,
     accel: Fx,
     max_speed: Fx,
     bounds_x: Fx,
@@ -83,7 +87,7 @@ struct Sim {
 }
 
 impl Sim {
-    fn from_scenario(s: &Scenario) -> Self {
+    pub fn from_scenario(s: &Scenario) -> Self {
         let spec = s.entities.first();
         Self {
             body: Body {
@@ -101,7 +105,7 @@ impl Sim {
     }
 
     /// One fixed step. `dt` comes from the scenario's tick rate, never a constant.
-    fn step(&mut self, dt: Fx, input: Option<(Fx, Fx)>) {
+    pub fn step(&mut self, dt: Fx, input: Option<(Fx, Fx)>) {
         if let Some((dx, dy)) = input {
             self.body.vx += dx * self.accel * dt;
             self.body.vy += dy * self.accel * dt;

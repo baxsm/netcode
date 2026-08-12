@@ -11,6 +11,7 @@ import type { SimApi } from "./sim-worker";
 import {
   BASELINE_CONFIG,
   type CustomSegmentSpec,
+  type Frame,
   type Metrics,
   type NetcodeConfig,
   type ScenarioSpec,
@@ -115,6 +116,15 @@ export class SimPool {
     config: NetcodeConfig,
   ): Promise<Snapshot[]> {
     return this.withSlot((api) => api.runSnapshots(scenario, segmentIndex, seed, config));
+  }
+
+  runFrames(
+    scenario: ScenarioSpec,
+    segment: CustomSegmentSpec,
+    seed: bigint,
+    config: NetcodeConfig,
+  ): Promise<Frame[]> {
+    return this.withSlot((api) => api.runFrames(scenario, segment, seed, config));
   }
 
   validate(config: NetcodeConfig): Promise<number> {

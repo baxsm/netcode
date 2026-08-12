@@ -50,6 +50,94 @@ export interface Snapshot {
   client: Body;
 }
 
+/** Clients recorded in each replay frame, asserted against the core at load. */
+export const FRAME_CLIENT_COUNT = 2;
+
+/** Values per client block inside a frame record. */
+export const FRAME_CLIENT_STRIDE = 10;
+
+/** Values per frame: tick, server x/y, rewind target, then one block per client. */
+export const FRAME_STRIDE = 4 + FRAME_CLIENT_STRIDE * FRAME_CLIENT_COUNT;
+
+/**
+ * What a tick slot carries when it holds nothing.
+ *
+ * Read only from tick slots. A coordinate has no spare value, so a ghost's presence
+ * is decided by its tick and a pre-correction position's by its magnitude, never by
+ * the coordinates themselves.
+ */
+export const ABSENT_TICK = -1;
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/** One client on one tick, as the replay view draws it. */
+export interface ClientFrame {
+  position: Point;
+  /** Newest authoritative state this client held, absent before the first arrival. */
+  ghost: (Point & { tick: number }) | null;
+  /** Where the client was before a correction moved it, absent when none occurred. */
+  preCorrection: Point | null;
+  correctionMagnitude: number;
+  snapped: boolean;
+  rollbackDepth: number;
+}
+
+export interface Frame {
+  tick: number;
+  server: Point;
+  clients: ClientFrame[];
+  /** Tick the server resolved a shot against, absent when nothing was fired. */
+  rewindTarget: number | null;
+}
+
+/** How each client reads in the interface. Identity is never colour alone. */
+export const CLIENT_LABELS = ["Client A", "Client B"] as const;
+
+export function decodeFrames(buffer: Float64Array | number[]): Frame[] {
+  if (buffer.length % FRAME_STRIDE !== 0) {
+    throw new Error(`frame buffer of ${buffer.length} is not a whole number of records`);
+  }
+
+  const out: Frame[] = [];
+  for (let i = 0; i < buffer.length; i += FRAME_STRIDE) {
+    const rewind = buffer[i + 3] as number;
+    const clients: ClientFrame[] = [];
+
+    for (let c = 0; c < FRAME_CLIENT_COUNT; c += 1) {
+      const at = i + 4 + c * FRAME_CLIENT_STRIDE;
+      const ghostTick = buffer[at + 2] as number;
+      const magnitude = buffer[at + 7] as number;
+      clients.push({
+        position: { x: buffer[at] as number, y: buffer[at + 1] as number },
+        ghost:
+          ghostTick === ABSENT_TICK
+            ? null
+            : {
+                tick: ghostTick,
+                x: buffer[at + 3] as number,
+                y: buffer[at + 4] as number,
+              },
+        preCorrection:
+          magnitude > 0 ? { x: buffer[at + 5] as number, y: buffer[at + 6] as number } : null,
+        correctionMagnitude: magnitude,
+        snapped: buffer[at + 8] === 1,
+        rollbackDepth: buffer[at + 9] as number,
+      });
+    }
+
+    out.push({
+      tick: buffer[i] as number,
+      server: { x: buffer[i + 1] as number, y: buffer[i + 2] as number },
+      clients,
+      rewindTarget: rewind === ABSENT_TICK ? null : rewind,
+    });
+  }
+  return out;
+}
+
 export const SEGMENT_PRESETS = [
   "perfect",
   "lan",

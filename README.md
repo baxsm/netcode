@@ -19,8 +19,8 @@ npm run build:wasm
 npm test
 ```
 
-Runs the typechecker, the Rust core suite, the Node determinism suite, and the cross-engine
-suite in Chromium and Firefox.
+Runs the typechecker, the Rust core suite, the TypeScript unit suite, the Node determinism
+suite, a production build, and the cross-engine browser suite in Chromium and Firefox.
 
 The simulation core uses fixed-point arithmetic so a given seed produces bit-identical results
 in every engine. `npm run test:e2e` is what enforces that: the same seed must produce the same

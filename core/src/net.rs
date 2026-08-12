@@ -1,27 +1,10 @@
 //! Seeded network emulation: delay, jitter, loss, reordering, duplication.
 //!
-//! Reproducible where real sockets are not. "150 ms, 2% loss, 30 ms jitter, seed 42"
-//! names one exact sequence of events, so two configurations can be compared under
-//! conditions that are adverse and identical.
-//!
-//! # Why the jitter distribution is not uniform
-//!
-//! Uniform jitter around a mean is the obvious implementation and it is wrong. Real
-//! one-way delay is right-skewed: most packets arrive near the floor set by physical
-//! distance, and a queued or retransmitted one arrives much later. A symmetric model
-//! has no tail, so it under-reports exactly the late packets that force a client to
-//! correct, and every recommendation the tool makes would be biased kind.
-//!
-//! `netem`, the Linux network emulator and the de facto reference for this, ships
-//! `pareto` and `paretonormal` distributions for precisely this reason, describing
-//! pareto as "useful to emulate long-tail distributions" and paretonormal as a mix
-//! "which has properties of both Bell curve and long tail". This module implements
-//! the paretonormal shape: a bell-like body from averaged uniforms plus a Pareto
-//! tail, both drawn from the seeded generator.
-//!
-//! Loss follows netem's other lesson. Independent per-packet loss is available, but
-//! real loss arrives in bursts, so `Gilbert-Elliott` two-state loss is offered too
-//! and is what the hostile profile uses.
+//! Jitter is right-skewed, not uniform. Real delay has a floor set by distance and a
+//! long tail from queueing, so a symmetric model hides the late packets that force
+//! corrections and biases every recommendation kind. This follows netem's
+//! `paretonormal`: a bell-like body plus a pareto tail. Loss follows netem's other
+//! model, Gilbert-Elliott, because real loss arrives in bursts.
 
 use crate::fx::{from_int, ratio, Fx};
 use crate::rng::Rng64;

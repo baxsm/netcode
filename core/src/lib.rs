@@ -3,6 +3,7 @@
 //! Everything below the boundary is pure: no I/O, no clock, no system entropy, no
 //! async. A run is fully determined by the arguments passed in.
 
+pub mod boundary;
 pub mod fx;
 pub mod hash;
 pub mod net;
@@ -13,12 +14,9 @@ pub mod sim;
 
 use wasm_bindgen::prelude::*;
 
-/// True when the build has relaxed SIMD compiled in.
-///
-/// The relaxed SIMD proposal states that the same instruction with the same inputs
-/// may return different results, which would break every comparison this project
-/// makes. It is off by default in the current toolchain, but a default is not a
-/// guarantee, so the build reports what it actually did and a test asserts it.
+/// True when the build has relaxed SIMD compiled in. Its instructions may return
+/// different results for the same inputs, so the build reports what it actually did
+/// rather than trusting the toolchain default to stay off.
 pub const fn relaxed_simd_enabled() -> bool {
     cfg!(target_feature = "relaxed-simd")
 }
@@ -46,6 +44,123 @@ pub fn version() -> String {
 #[wasm_bindgen]
 pub fn state_hash(seed: u64, ticks: u32, entity_count: u32) -> u64 {
     sim::run_to_hash(seed, ticks, entity_count as usize)
+}
+
+/// Number of values in the buffer `run_metrics` returns.
+#[wasm_bindgen]
+pub fn metrics_len() -> u32 {
+    boundary::METRICS_LEN as u32
+}
+
+/// Values per snapshot record in the buffer `run_snapshots` returns.
+#[wasm_bindgen]
+pub fn snapshot_stride() -> u32 {
+    boundary::SNAPSHOT_STRIDE as u32
+}
+
+/// Names of the built-in network presets, tab separated. Indices match
+/// `segment_index` on the run functions.
+#[wasm_bindgen]
+pub fn segment_names() -> String {
+    boundary::SEGMENT_NAMES.join("\t")
+}
+
+/// Runs one simulation and returns its metrics as a flat buffer. Field order is the
+/// contract with the TypeScript mirror, held together by a test.
+#[allow(clippy::too_many_arguments)]
+#[wasm_bindgen]
+pub fn run_metrics(
+    seed: u64,
+    segment_index: u32,
+    tick_rate: u32,
+    duration_ticks: u32,
+    accel: i32,
+    max_speed: i32,
+    friction_permille: u32,
+    bounds: i32,
+    move_from_tick: u32,
+    stop_at_tick: u32,
+) -> Vec<f64> {
+    let scenario = boundary::build_scenario(&boundary::BuildScenario {
+        tick_rate,
+        duration_ticks,
+        accel,
+        max_speed,
+        friction_permille,
+        bounds,
+        move_from_tick,
+        stop_at_tick,
+    });
+    boundary::metrics_buffer(&scenario, boundary::segment_by_index(segment_index), seed)
+}
+
+/// Same run, against a network described directly rather than by preset.
+#[allow(clippy::too_many_arguments)]
+#[wasm_bindgen]
+pub fn run_metrics_custom(
+    seed: u64,
+    tick_rate: u32,
+    duration_ticks: u32,
+    accel: i32,
+    max_speed: i32,
+    friction_permille: u32,
+    bounds: i32,
+    move_from_tick: u32,
+    stop_at_tick: u32,
+    rtt_mean_ms: u32,
+    rtt_jitter_ms: u32,
+    loss_pct: u32,
+    reorder_pct: u32,
+    duplicate_pct: u32,
+    burst_loss: bool,
+) -> Vec<f64> {
+    let scenario = boundary::build_scenario(&boundary::BuildScenario {
+        tick_rate,
+        duration_ticks,
+        accel,
+        max_speed,
+        friction_permille,
+        bounds,
+        move_from_tick,
+        stop_at_tick,
+    });
+    let segment = boundary::custom_segment(&boundary::CustomSegment {
+        rtt_mean_ms,
+        rtt_jitter_ms,
+        loss_pct,
+        reorder_pct,
+        duplicate_pct,
+        burst_loss,
+    });
+    boundary::metrics_buffer(&scenario, segment, seed)
+}
+
+/// Per-tick server and client positions, for the replay view.
+#[allow(clippy::too_many_arguments)]
+#[wasm_bindgen]
+pub fn run_snapshots(
+    seed: u64,
+    segment_index: u32,
+    tick_rate: u32,
+    duration_ticks: u32,
+    accel: i32,
+    max_speed: i32,
+    friction_permille: u32,
+    bounds: i32,
+    move_from_tick: u32,
+    stop_at_tick: u32,
+) -> Vec<f64> {
+    let scenario = boundary::build_scenario(&boundary::BuildScenario {
+        tick_rate,
+        duration_ticks,
+        accel,
+        max_speed,
+        friction_permille,
+        bounds,
+        move_from_tick,
+        stop_at_tick,
+    });
+    boundary::snapshot_buffer(&scenario, boundary::segment_by_index(segment_index), seed)
 }
 
 #[cfg(test)]

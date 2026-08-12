@@ -132,16 +132,9 @@ pub fn run_to_hash(seed: u64, ticks: u32, entity_count: usize) -> u64 {
 mod tests {
     use super::*;
 
-    /// Pins the simulation against its recorded output.
-    ///
-    /// Every other test here compares a run to another run, so a bug that shifts
-    /// every result equally stays invisible to them. A one-bit change in the
-    /// integrator passes all of them and fails this. These values are the same ones
-    /// `tests/vectors.ts` checks the browsers against, so the Rust suite and the
-    /// cross-engine gate cannot disagree about what correct means.
-    ///
-    /// Regenerate only when the simulation is deliberately changed, and update
-    /// `tests/vectors.ts` in the same commit.
+    /// Pins the simulation against its recorded output. Every other test compares a
+    /// run to another run, so a one-bit change in the integrator passes all of them
+    /// and fails this. Same values as `tests/vectors.ts`; update both together.
     #[test]
     fn pinned_hashes() {
         let cases: [(u64, u32, usize, u64); 7] = [

@@ -1,11 +1,8 @@
 //! One seeded run: a server and a client simulating the same scenario across a
 //! network, and the metrics that come out of it.
 //!
-//! There is no latency compensation here yet. The client applies its own input
-//! immediately and the server is authoritative, with nothing reconciling the two.
-//! That is deliberate: it is the baseline Phase 2's techniques have to beat, and a
-//! baseline under loss should show large divergence. A small divergence at this stage
-//! would mean the network layer is not actually doing anything.
+//! No latency compensation yet. That is the baseline phase 2 has to beat, so large
+//! divergence under loss is the expected result here, not a bug.
 
 use crate::fx::{abs, clamp, sqrt, to_bits, Fx};
 use crate::hash::Hasher;
@@ -13,12 +10,9 @@ use crate::net::{Link, NetworkSegment, PacketPayload};
 use crate::rng::Rng64;
 use crate::scenario::{InputAction, Scenario};
 
-/// Ticks skipped before metrics start accumulating.
-///
-/// The first packets are still in flight during this window, so a client has nothing
-/// authoritative to compare against and its divergence is meaningless rather than
-/// large. Including it would make every configuration look equally bad at the start
-/// and compress the differences the tool exists to measure.
+/// Ticks skipped before metrics accumulate. The first packets are still in flight,
+/// so divergence in this window is meaningless rather than large, and including it
+/// would compress the differences between configurations.
 pub const WARMUP_TICKS: u32 = 32;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -576,12 +570,8 @@ mod tests {
         assert_eq!(result.metrics.packets_dropped, 0);
     }
 
-    /// Guards the tick-rate-as-data requirement through the real `run` entry point.
-    ///
-    /// Testing `Sim::step` alone does not cover this: `run` derives `dt` from the
-    /// scenario, and hardcoding a rate there passes every test that only drives the
-    /// stepper directly. Two rates over the same wall-clock duration must land in the
-    /// same place, and a hardcoded `dt` makes one of them travel twice as far.
+    /// Guards tick-rate-as-data through `run` itself. Driving `Sim::step` directly
+    /// does not cover it, because `run` is where `dt` is derived.
     #[test]
     fn run_derives_dt_from_the_scenario_tick_rate() {
         let mut at_64 = moving_scenario(64, 64);
@@ -615,11 +605,8 @@ mod tests {
         );
     }
 
-    /// Guards the scheduled-tick requirement.
-    ///
-    /// A cursor that accepts any event at or before the current tick applies a late
-    /// input early, which is invisible when every input starts at tick 0. Scheduling
-    /// the first input away from tick 0 is what makes the difference observable.
+    /// Scheduling the input away from tick 0 is what makes an early-applying cursor
+    /// observable at all.
     #[test]
     fn an_input_scheduled_later_does_not_apply_early() {
         let mut scenario = moving_scenario(64, 80);

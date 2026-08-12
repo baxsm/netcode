@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+
+      - run: npm ci
+
+      - name: Check rust formatting
+        run: cargo fmt --manifest-path core/Cargo.toml -- --check
+
+      - name: Lint rust
+        run: cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
+
+      - name: Test rust core
+        run: npm run test:core
+
+      - name: Build wasm
+        run: npm run build:wasm
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Determinism in node
+        run: npm run test:determinism
+
+      - run: npx playwright install --with-deps chromium firefox
+
+      # the cross-engine gate: chromium and firefox must agree with each other and
+      # with the hashes recorded from the native rust core
+      - name: Determinism across engines
+        run: npm run test:e2e

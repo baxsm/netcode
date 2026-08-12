@@ -1,0 +1,21 @@
+node_modules/
+dist/
+
+# rust build output
+core/target/
+
+# wasm-pack output, rebuilt by npm run build:wasm
+core/pkg-web/
+core/pkg-node/
+
+# playwright artifacts
+test-results/
+playwright-report/
+**/e2e/screenshots/
+
+.env
+.env.*
+!.env.example
+
+.DS_Store
+*.log

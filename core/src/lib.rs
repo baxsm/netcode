@@ -5,7 +5,10 @@
 
 pub mod fx;
 pub mod hash;
+pub mod net;
 pub mod rng;
+pub mod run;
+pub mod scenario;
 pub mod sim;
 
 use wasm_bindgen::prelude::*;

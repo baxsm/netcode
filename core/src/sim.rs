@@ -132,6 +132,36 @@ pub fn run_to_hash(seed: u64, ticks: u32, entity_count: usize) -> u64 {
 mod tests {
     use super::*;
 
+    /// Pins the simulation against its recorded output.
+    ///
+    /// Every other test here compares a run to another run, so a bug that shifts
+    /// every result equally stays invisible to them. A one-bit change in the
+    /// integrator passes all of them and fails this. These values are the same ones
+    /// `tests/vectors.ts` checks the browsers against, so the Rust suite and the
+    /// cross-engine gate cannot disagree about what correct means.
+    ///
+    /// Regenerate only when the simulation is deliberately changed, and update
+    /// `tests/vectors.ts` in the same commit.
+    #[test]
+    fn pinned_hashes() {
+        let cases: [(u64, u32, usize, u64); 7] = [
+            (42, 600, 16, 12437711605233424538),
+            (0, 600, 16, 12303115795811892721),
+            (u64::MAX, 300, 8, 6045337531062695667),
+            (7, 1000, 64, 371772212692087449),
+            (99, 2000, 1, 7229280520226837599),
+            (5, 0, 4, 7442660319107100209),
+            (123456789, 5000, 32, 9848046739593345173),
+        ];
+        for (seed, ticks, entities, expected) in cases {
+            assert_eq!(
+                run_to_hash(seed, ticks, entities),
+                expected,
+                "seed={seed} ticks={ticks} entities={entities}"
+            );
+        }
+    }
+
     #[test]
     fn same_seed_same_hash() {
         assert_eq!(run_to_hash(42, 600, 16), run_to_hash(42, 600, 16));

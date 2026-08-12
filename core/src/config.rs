@@ -92,7 +92,10 @@ impl Default for NetcodeConfig {
         Self {
             techniques: TechniqueSet::ALL,
             interpolation_delay_ticks: 2,
-            input_buffer_ticks: 2,
+            // no server-side hold by default. the buffer trades responsiveness for
+            // steadier consumption under jitter, and which side of that is worth it
+            // is the question the sweep answers rather than something to assume
+            input_buffer_ticks: 0,
             rollback_window_ticks: 8,
             correction_blend_rate: ratio(8, 10),
             snap_threshold: crate::fx::from_int(50),

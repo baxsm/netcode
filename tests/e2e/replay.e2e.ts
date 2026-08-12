@@ -162,7 +162,10 @@ test("shows the active configuration", async ({ page }) => {
   const strip = page.getByTestId("config-strip");
   await expect(strip).toBeVisible();
   await expect(strip).toContainText("Client prediction");
-  await expect(strip).toContainText("rollback window");
+  // the constants the sweep varies, so a config opened from the tune page shows the
+  // values that were chosen rather than ones that cannot change this scenario
+  await expect(strip).toContainText("input buffer");
+  await expect(strip).toContainText("blend");
 });
 
 test("explains every marker it draws", async ({ page }) => {

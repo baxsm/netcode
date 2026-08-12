@@ -16,6 +16,8 @@ import {
   type NetcodeConfig,
   type ScenarioSpec,
   type Snapshot,
+  type SweepPoint,
+  type WeightedSegment,
 } from "../sim/types";
 
 export interface SweepProgress {
@@ -36,9 +38,18 @@ interface Slot {
   busy: boolean;
 }
 
+/**
+ * Workers to run, leaving one core for the thread that draws.
+ *
+ * A sweep is embarrassingly parallel, so throughput scales with workers, but the last
+ * core is worth more to the UI than to the sweep: it is what keeps the progress
+ * readout updating while the run is in flight. The cap is a ceiling on machines that
+ * report a very high core count, where more workers buy little and each one still
+ * compiles its own copy of the module.
+ */
 function defaultSize(): number {
   const cores = typeof navigator === "undefined" ? 4 : (navigator.hardwareConcurrency ?? 4);
-  return Math.max(1, Math.min(cores, 16));
+  return Math.max(1, Math.min(cores - 1, 12));
 }
 
 export class SimPool {
@@ -81,9 +92,40 @@ export class SimPool {
   private async withSlot<T>(fn: (api: Comlink.Remote<SimApi>) => Promise<T>): Promise<T> {
     const slot = await this.acquire();
     try {
-      return await fn(slot.api);
-    } finally {
+      const value = await fn(slot.api);
       this.release(slot);
+      return value;
+    } catch (cause) {
+      // a worker that threw may be dead, and handing the same one back would make
+      // every retry fail identically. it is discarded and the next acquire spawns a
+      // replacement, so a retry gets a live worker
+      this.discard(slot);
+      throw cause;
+    }
+  }
+
+  /**
+   * Drops a slot from the pool and terminates it.
+   *
+   * Anything waiting is handed a fresh slot rather than left queued behind a worker
+   * that is never coming back.
+   */
+  private discard(slot: Slot): void {
+    const at = this.slots.indexOf(slot);
+    if (at !== -1) this.slots.splice(at, 1);
+
+    try {
+      slot.worker.terminate();
+    } catch {
+      // terminating an already-dead worker is not a failure worth reporting
+    }
+
+    const next = this.waiting.shift();
+    if (next) {
+      const replacement = this.spawn();
+      replacement.busy = true;
+      this.slots.push(replacement);
+      next(replacement);
     }
   }
 
@@ -210,6 +252,93 @@ export class SimPool {
     );
 
     return results;
+  }
+
+  /**
+   * Runs the configuration grid across the pool and returns one point per config.
+   *
+   * The grid is split into chunks and each chunk crosses to a worker in a single
+   * call, so the messaging cost is per chunk rather than per run. Results are written
+   * back at the index they came from, so the output order matches the input grid no
+   * matter which worker finishes first. That ordering is what makes the same sweep
+   * produce identical results on 1, 2 or 8 workers.
+   */
+  async runSweep(
+    scenario: ScenarioSpec,
+    configs: readonly NetcodeConfig[],
+    segments: readonly WeightedSegment[],
+    seeds: readonly number[],
+    onProgress?: (progress: SweepProgress) => void,
+  ): Promise<SweepPoint[]> {
+    if (configs.length === 0) return [];
+
+    // enough chunks to keep every worker fed, and small enough that progress moves
+    // more than once. a chunk per worker would report nothing until the first
+    // finishes, which on a large sweep reads as a hang
+    const chunkCount = Math.min(configs.length, Math.max(this.size, 1) * 4);
+    const chunkSize = Math.ceil(configs.length / chunkCount);
+
+    const chunks: Array<{ at: number; configs: NetcodeConfig[] }> = [];
+    for (let at = 0; at < configs.length; at += chunkSize) {
+      chunks.push({ at, configs: configs.slice(at, at + chunkSize) });
+    }
+
+    const results = new Array<SweepPoint>(configs.length);
+    const seedList = [...seeds];
+    const segmentList = [...segments];
+    let completed = 0;
+
+    await Promise.all(
+      chunks.map(async (chunk) => {
+        const points = await this.sweepChunk(scenario, chunk.configs, segmentList, seedList);
+        points.forEach((point, i) => {
+          results[chunk.at + i] = point;
+        });
+        completed += chunk.configs.length;
+        onProgress?.({ completed, total: configs.length });
+      }),
+    );
+
+    // a chunk that resolved without filling its slots would leave a hole, and a front
+    // computed over a partial grid still looks like a complete answer
+    const missing = results.findIndex((point) => point === undefined);
+    if (missing !== -1) {
+      throw new Error(`the sweep returned no result for configuration ${missing}`);
+    }
+    return results;
+  }
+
+  /**
+   * One chunk, retried once on failure.
+   *
+   * A worker that dies mid-sweep must not have its configurations quietly missing
+   * from the results, because the front would then be computed over a subset while
+   * still presenting as the whole search. The retry runs on a freshly spawned slot,
+   * since the one that died is not going to answer. A second failure names the first
+   * configuration in the chunk so the offending input is reported rather than a bare
+   * worker error.
+   */
+  private async sweepChunk(
+    scenario: ScenarioSpec,
+    configs: NetcodeConfig[],
+    segments: WeightedSegment[],
+    seeds: number[],
+  ): Promise<SweepPoint[]> {
+    try {
+      return await this.withSlot((api) => api.runSweep(scenario, configs, segments, seeds));
+    } catch (first) {
+      try {
+        return await this.withSlot((api) => api.runSweep(scenario, configs, segments, seeds));
+      } catch (second) {
+        const reason = second instanceof Error ? second.message : String(second);
+        const first_ = configs[0];
+        throw new Error(
+          `a worker failed twice on a block of ${configs.length} configurations` +
+            `${first_ ? `, starting at interpolation delay ${first_.interpolationDelayTicks}` : ""}: ${reason}`,
+          { cause: first },
+        );
+      }
+    }
   }
 
   /**

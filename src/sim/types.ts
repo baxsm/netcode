@@ -138,6 +138,96 @@ export function decodeFrames(buffer: Float64Array | number[]): Frame[] {
   return out;
 }
 
+/**
+ * Values per sweep point: a full metrics record, then the two scores and the two
+ * halves of the config hash. Asserted against the core's `sweep_stride()` at load.
+ */
+export const SWEEP_STRIDE = METRIC_FIELDS.length + 4;
+
+/** Values per segment the sweep aggregates over: weight in permille, then conditions. */
+export const SWEEP_SEGMENT_STRIDE = 7;
+
+/** One configuration's aggregate result across the whole population. */
+export interface SweepPoint {
+  config: NetcodeConfig;
+  metrics: Metrics;
+  /** Lower is better. Input latency and peeker's advantage against fixed anchors. */
+  responsiveness: number;
+  /** Lower is better. Divergence p99, worst correction and correction rate. */
+  smoothness: number;
+  configHash: bigint;
+}
+
+/**
+ * A network segment with its share of the player population.
+ *
+ * Weight crosses as permille to match every other rate on this boundary, so no
+ * decimal is parsed through a float on the way into a fixed-point core.
+ */
+export interface WeightedSegment extends CustomSegmentSpec {
+  weightPermille: number;
+}
+
+export function encodeSegments(segments: readonly WeightedSegment[]): Float64Array {
+  const out = new Float64Array(segments.length * SWEEP_SEGMENT_STRIDE);
+  segments.forEach((s, i) => {
+    const at = i * SWEEP_SEGMENT_STRIDE;
+    out[at] = s.weightPermille;
+    out[at + 1] = s.rttMeanMs;
+    out[at + 2] = s.rttJitterMs;
+    out[at + 3] = s.lossPct;
+    out[at + 4] = s.reorderPct;
+    out[at + 5] = s.duplicatePct;
+    out[at + 6] = s.burstLoss ? 1 : 0;
+  });
+  return out;
+}
+
+/** Lays configurations end to end, each `CONFIG_LEN` values wide. */
+export function encodeConfigs(configs: readonly NetcodeConfig[]): Float64Array {
+  const out = new Float64Array(configs.length * CONFIG_LEN);
+  configs.forEach((config, i) => out.set(encodeConfig(config), i * CONFIG_LEN));
+  return out;
+}
+
+/**
+ * Reads the sweep buffer back, pairing each record with the config that produced it.
+ *
+ * The configs are passed in rather than decoded out of the buffer: the core returns
+ * a config *hash* for identity, not the fields, so the caller's list is the only
+ * place the actual values exist. The hash is what proves the pairing is right.
+ */
+export function decodeSweep(
+  buffer: Float64Array | number[],
+  configs: readonly NetcodeConfig[],
+): SweepPoint[] {
+  if (buffer.length % SWEEP_STRIDE !== 0) {
+    throw new Error(`sweep buffer of ${buffer.length} is not a whole number of records`);
+  }
+  const count = buffer.length / SWEEP_STRIDE;
+  if (count !== configs.length) {
+    throw new Error(`sweep returned ${count} points for ${configs.length} configurations`);
+  }
+
+  const out: SweepPoint[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const at = i * SWEEP_STRIDE;
+    const metrics = decodeMetrics(
+      Array.from({ length: METRIC_FIELDS.length }, (_, k) => buffer[at + k] as number),
+    );
+    const high = BigInt(buffer[at + METRIC_FIELDS.length + 2] as number);
+    const low = BigInt(buffer[at + METRIC_FIELDS.length + 3] as number);
+    out.push({
+      config: configs[i] as NetcodeConfig,
+      metrics,
+      responsiveness: buffer[at + METRIC_FIELDS.length] as number,
+      smoothness: buffer[at + METRIC_FIELDS.length + 1] as number,
+      configHash: (high << 32n) | low,
+    });
+  }
+  return out;
+}
+
 export const SEGMENT_PRESETS = [
   "perfect",
   "lan",
@@ -245,7 +335,7 @@ export const ALL_TECHNIQUES: TechniqueSet = {
 export const DEFAULT_CONFIG: NetcodeConfig = {
   techniques: ALL_TECHNIQUES,
   interpolationDelayTicks: 2,
-  inputBufferTicks: 2,
+  inputBufferTicks: 0,
   rollbackWindowTicks: 8,
   correctionBlendPermille: 800,
   snapThresholdPermille: 50_000,

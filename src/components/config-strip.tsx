@@ -10,12 +10,19 @@ interface ConfigStripProps {
   config: NetcodeConfig;
 }
 
-/** The constants worth reading at a glance while watching the replay. */
+/**
+ * The constants worth reading at a glance while watching the replay.
+ *
+ * These are the three the sweep varies, so a configuration opened from the tune page
+ * shows the values that were actually chosen. Rollback window and rewind limit are
+ * left out: neither changes what this scenario does, so printing them next to motion
+ * they cannot affect would imply they were part of the result.
+ */
 const CONSTANTS: Array<{ label: string; read: (c: NetcodeConfig) => string }> = [
-  { label: "interp delay", read: (c) => `${c.interpolationDelayTicks} ticks` },
-  { label: "rollback window", read: (c) => `${c.rollbackWindowTicks} ticks` },
+  { label: "input buffer", read: (c) => `${c.inputBufferTicks} ticks` },
   { label: "blend", read: (c) => `${c.correctionBlendPermille / 10}%` },
-  { label: "rewind limit", read: (c) => `${c.serverRewindLimitMs} ms` },
+  { label: "snap", read: (c) => `${(c.snapThresholdPermille / 1000).toFixed(1)} units` },
+  { label: "interp delay", read: (c) => `${c.interpolationDelayTicks} ticks` },
 ];
 
 /**

@@ -18,7 +18,7 @@ use crate::rng::Rng64;
 use crate::scenario::{InputAction, Scenario};
 use crate::techniques::{
     apply_correction, extrapolate, interpolate, rewind_limit_ticks, rewind_target_tick,
-    InputHistory, PendingInput, StateBuffer, StateSample,
+    InputBuffer, InputHistory, PendingInput, StateBuffer, StateSample,
 };
 
 /// Ticks skipped before metrics accumulate. The first packets are still in flight,
@@ -196,6 +196,10 @@ pub fn run(request: RunRequest<'_>) -> RunResult {
     let mut server_last_input: Option<(Fx, Fx)> = None;
     let mut server_last_sequence: u32 = 0;
 
+    // arrived inputs wait here before the server applies them, absorbing jitter at
+    // the cost of the latency the hold adds
+    let mut input_buffer = InputBuffer::new();
+
     // the script is walked with a cursor rather than searched, so an input applies at
     // its scheduled tick and never at the tick it happens to be read
     let mut cursor = 0usize;
@@ -263,7 +267,6 @@ pub fn run(request: RunRequest<'_>) -> RunResult {
         // reconciled state stays permanently short of motion. That is the
         // "replaying against the wrong starting state" failure mode, and it reads as
         // a client that slowly falls behind rather than as an error.
-        let mut arrived: Vec<(Fx, Fx)> = Vec::new();
         for packet in to_server.receive(tick) {
             if let PacketPayload::Input {
                 dx,
@@ -278,12 +281,22 @@ pub fn run(request: RunRequest<'_>) -> RunResult {
                 if sequence <= server_last_sequence {
                     continue;
                 }
-                arrived.push((dx, dy));
                 server_last_sequence = sequence;
-                latency_total_ms += Fx::from_num(tick.saturating_sub(input_tick)) * tick_ms;
+                input_buffer.push(tick, config.input_buffer_ticks, dx, dy);
+                // the buffer's hold is part of what the input cost to deliver, so it
+                // is counted here rather than only the transit. a buffer that bought
+                // smoothness for free would make the sweep recommend the deepest one
+                latency_total_ms += Fx::from_num(
+                    tick.saturating_sub(input_tick)
+                        .saturating_add(config.input_buffer_ticks as u32),
+                ) * tick_ms;
                 latency_count += 1;
             }
         }
+
+        // held inputs become eligible after their depth has elapsed, so a late input
+        // and an early one are consumed one tick apart rather than together
+        let arrived = input_buffer.release(tick);
 
         if arrived.is_empty() {
             // server-side input prediction: repeat the last received input when
@@ -856,6 +869,141 @@ mod tests {
             end_a.x,
             end_b.x
         );
+    }
+
+    /// The input buffer must cost latency, and the cost must scale with its depth.
+    ///
+    /// `input_buffer_ticks` was carried in the config, hashed and validated for two
+    /// phases while the simulation never read it. Nothing caught that, because no
+    /// test asserted the constant changed a result. This is that test.
+    #[test]
+    fn a_deeper_input_buffer_costs_input_latency() {
+        let scenario = moving_scenario(64, 200);
+        let latency = |depth: u8| {
+            run_config(
+                &scenario,
+                NetworkSegment::average_broadband(),
+                7,
+                NetcodeConfig {
+                    input_buffer_ticks: depth,
+                    ..NetcodeConfig::default()
+                },
+            )
+            .metrics
+            .input_latency_mean_ms
+        };
+
+        let none = latency(0);
+        let shallow = latency(2);
+        let deep = latency(6);
+        assert!(
+            shallow > none,
+            "a buffer of 2 cost nothing against no buffer"
+        );
+        assert!(deep > shallow, "a buffer of 6 cost no more than one of 2");
+
+        // one tick at 64 Hz is 15.625 ms, so six ticks is a shade under 94 ms of
+        // hold. asserted against the tick interval rather than a literal, so a
+        // scenario at another rate does not need a different number here
+        let per_tick = scenario.tick_interval_ms();
+        let expected = per_tick * from_int(6);
+        assert!(
+            abs(deep - none - expected) < per_tick,
+            "six ticks of hold added {} rather than {}",
+            to_f64_for_display(deep - none),
+            to_f64_for_display(expected)
+        );
+    }
+
+    /// What the buffer actually buys: a smaller worst correction under jitter.
+    ///
+    /// Measured rather than assumed. The first version of this test asserted the
+    /// buffer lowers divergence p99, and it does not: a hold moves the *server* back
+    /// in time, so a predicting client reads as further from it, and p99 rises. What
+    /// falls monotonically is the largest single correction, because the server
+    /// consumes at a steadier rate and never lurches through two inputs at once.
+    ///
+    /// That is the tradeoff the sweep prices, and it is a real one: across depths
+    /// 0, 2, 4 and 8 on this link the worst correction falls while input latency
+    /// rises from 33 ms to 158 ms.
+    #[test]
+    fn an_input_buffer_lowers_the_worst_correction_under_jitter() {
+        let scenario = moving_scenario(64, 400);
+        // jitter large next to the tick interval, which is the condition a buffer
+        // exists for. a steady link has nothing for it to absorb
+        let jittery = NetworkSegment {
+            rtt_mean_ms: 80,
+            rtt_jitter_ms: 40,
+            ..NetworkSegment::default()
+        };
+
+        let worst = |depth: u8| {
+            run_config(
+                &scenario,
+                jittery,
+                3,
+                NetcodeConfig {
+                    input_buffer_ticks: depth,
+                    ..NetcodeConfig::default()
+                },
+            )
+            .metrics
+            .correction_magnitude_max
+        };
+
+        let none = worst(0);
+        let deep = worst(8);
+        assert!(
+            deep < none,
+            "the buffer did not reduce the worst correction: {} against {}",
+            to_f64_for_display(deep),
+            to_f64_for_display(none)
+        );
+    }
+
+    /// The cost side of the same tradeoff, so both directions are pinned. A change
+    /// that made the buffer free would pass the test above and fail this one.
+    #[test]
+    fn the_input_buffer_trades_latency_for_that_smoothness() {
+        let scenario = moving_scenario(64, 400);
+        let jittery = NetworkSegment {
+            rtt_mean_ms: 80,
+            rtt_jitter_ms: 40,
+            ..NetworkSegment::default()
+        };
+        let latency = |depth: u8| {
+            run_config(
+                &scenario,
+                jittery,
+                3,
+                NetcodeConfig {
+                    input_buffer_ticks: depth,
+                    ..NetcodeConfig::default()
+                },
+            )
+            .metrics
+            .input_latency_mean_ms
+        };
+        assert!(latency(8) > latency(0) * from_int(2));
+    }
+
+    /// A buffer of zero must behave exactly as no buffer at all, or every pinned
+    /// result from the earlier phases would have shifted underneath it.
+    #[test]
+    fn a_zero_depth_buffer_applies_inputs_the_tick_they_arrive() {
+        let scenario = moving_scenario(64, 200);
+        let result = run_config(
+            &scenario,
+            NetworkSegment::perfect(),
+            5,
+            NetcodeConfig {
+                input_buffer_ticks: 0,
+                ..NetcodeConfig::default()
+            },
+        );
+        // a perfect link delivers within the tick, so with no hold the server and a
+        // predicting client stay exactly together
+        assert_eq!(result.metrics.divergence_max, Fx::ZERO);
     }
 
     /// Scheduling the input away from tick 0 is what makes an early-applying cursor

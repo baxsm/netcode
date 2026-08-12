@@ -25,7 +25,63 @@ body {
 main {
   max-width: 60rem;
   margin: 0 auto;
-  padding: 2.5rem 1.25rem 4rem;
+  padding: 2rem 1.25rem 4rem;
+}
+
+/* the rule spans the viewport while its contents stay on the page's column, so the
+   bar reads as chrome rather than as a panel that stops short of the edge */
+.top-bar {
+  border-bottom: 1px solid var(--line);
+}
+
+.top-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  flex-wrap: wrap;
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 0.9rem 1.25rem;
+}
+
+.wordmark {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-right: 0.25rem;
+}
+
+.top-bar ul {
+  display: flex;
+  gap: 0.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+}
+
+.top-bar a {
+  display: block;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.top-bar a:hover {
+  color: var(--text);
+  background: var(--panel);
+}
+
+.top-bar a[aria-current="page"] {
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.top-bar a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 h1 {
@@ -512,6 +568,236 @@ td .change {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+.sweep-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1.25rem 1.5rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.field label {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.field select {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+  width: 100%;
+}
+
+.field select:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.field-note {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.segment-list {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 1.25rem 0 0;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* full width so the share bar behind each row is measured against the same box on
+   every row. sized to content, a 5% bar could end up wider than a 25% one */
+.segment-list li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  font-size: 0.8125rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+/* the bar is the share of the population, drawn behind the row rather than as a
+   separate chart, so weight and conditions read as one line */
+.segment-share {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 5px;
+}
+
+.segment-weight {
+  position: relative;
+  font-variant-numeric: tabular-nums;
+  width: 3rem;
+  flex-shrink: 0;
+}
+
+.segment-conditions {
+  position: relative;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.sweep-run {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.note.coverage {
+  margin-top: 0.75rem;
+  max-width: none;
+}
+
+.chart {
+  margin: 0 0 0.5rem;
+  /* recharts measures its parent, so the container needs a width it can read */
+  width: 100%;
+  min-width: 0;
+}
+
+.chart-tooltip {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.75rem;
+  max-width: 15rem;
+}
+
+.chart-tooltip strong {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.8125rem;
+}
+
+.chart-tooltip dl {
+  margin: 0;
+  display: grid;
+  gap: 0.15rem 0.75rem;
+}
+
+.chart-tooltip dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.chart-tooltip dt {
+  color: var(--muted);
+}
+
+.chart-tooltip dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tooltip-hint {
+  display: block;
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1.5rem 2rem;
+}
+
+.sub-heading {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.metric-list,
+.config-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.metric-list div,
+.config-list div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 1rem;
+  align-items: baseline;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.metric-list div:last-child,
+.config-list div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.metric-list dt,
+.config-list dt {
+  font-size: 0.875rem;
+}
+
+.metric-list dd,
+.config-list dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.metric-note {
+  grid-column: 1 / -1;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.config-list dd {
+  color: var(--muted);
+}
+
+.diff {
+  margin-top: 1.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.diff .panel-head {
+  margin-bottom: 0.75rem;
 }
 
 /* chrome animation only. the simulation is the content, so stopping it would remove

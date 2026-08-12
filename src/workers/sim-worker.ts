@@ -11,6 +11,9 @@ import init, {
   run_metrics,
   run_metrics_custom,
   run_snapshots,
+  run_sweep,
+  sweep_segment_stride,
+  sweep_stride,
   validate_config,
   version,
 } from "../../core/pkg-web/netcode_core.js";
@@ -18,10 +21,15 @@ import {
   CONFIG_LEN,
   FRAME_CLIENT_COUNT,
   FRAME_STRIDE,
+  SWEEP_SEGMENT_STRIDE,
+  SWEEP_STRIDE,
   decodeFrames,
   decodeMetrics,
   decodeSnapshots,
+  decodeSweep,
   encodeConfig,
+  encodeConfigs,
+  encodeSegments,
   METRIC_FIELDS,
   type CustomSegmentSpec,
   type Frame,
@@ -29,6 +37,8 @@ import {
   type NetcodeConfig,
   type ScenarioSpec,
   type Snapshot,
+  type SweepPoint,
+  type WeightedSegment,
 } from "../sim/types";
 
 let ready: Promise<void> | null = null;
@@ -58,6 +68,18 @@ function load(): Promise<void> {
       if (coreClients !== FRAME_CLIENT_COUNT) {
         throw new Error(
           `core records ${coreClients} clients but the mirror expects ${FRAME_CLIENT_COUNT}`,
+        );
+      }
+      const coreSweepStride = sweep_stride();
+      if (coreSweepStride !== SWEEP_STRIDE) {
+        throw new Error(
+          `core writes ${coreSweepStride} values per sweep point but the mirror reads ${SWEEP_STRIDE}`,
+        );
+      }
+      const coreSegmentStride = sweep_segment_stride();
+      if (coreSegmentStride !== SWEEP_SEGMENT_STRIDE) {
+        throw new Error(
+          `core reads ${coreSegmentStride} values per segment but the mirror sends ${SWEEP_SEGMENT_STRIDE}`,
         );
       }
     });
@@ -174,6 +196,38 @@ const api = {
         segment.burstLoss,
         encodeConfig(config),
       ),
+    );
+  },
+
+  /**
+   * Runs a block of the configuration grid in one call.
+   *
+   * The block is many configurations rather than one, because a run costs about
+   * 0.4 ms and a round trip to this worker costs about the same. Issued one at a
+   * time, a sweep of thousands would spend as long on messaging as on simulating.
+   */
+  async runSweep(
+    scenario: ScenarioSpec,
+    configs: NetcodeConfig[],
+    segments: WeightedSegment[],
+    seeds: number[],
+  ): Promise<SweepPoint[]> {
+    await load();
+    return decodeSweep(
+      run_sweep(
+        scenario.tickRate,
+        scenario.durationTicks,
+        scenario.accel,
+        scenario.maxSpeed,
+        scenario.frictionPermille,
+        scenario.bounds,
+        scenario.moveFromTick,
+        scenario.stopAtTick,
+        encodeConfigs(configs),
+        encodeSegments(segments),
+        Float64Array.from(seeds),
+      ),
+      configs,
     );
   },
 

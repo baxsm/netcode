@@ -21,6 +21,61 @@ pub struct PendingInput {
     pub dy: Fx,
 }
 
+/// The server's queue of arrived inputs, held before being applied.
+///
+/// A server that applies an input the tick it arrives is at the mercy of jitter: two
+/// inputs land in one tick and none in the next, so the body lurches and then
+/// stalls. Holding each input for a fixed number of ticks lets a late one catch up
+/// with an early one, and the server consumes at a steady rate instead.
+///
+/// The cost is latency. Every input waits the full depth even when the link is
+/// perfectly steady, which is the tradeoff the sweep exists to price: depth buys
+/// smoothness under jitter and spends responsiveness to do it.
+///
+/// A depth of zero applies inputs the tick they arrive, which is the no-buffer case.
+#[derive(Clone, Debug, Default)]
+pub struct InputBuffer {
+    /// Each entry is the tick the input becomes eligible, and the input itself.
+    queue: Vec<(u32, Fx, Fx)>,
+}
+
+impl InputBuffer {
+    pub fn new() -> Self {
+        Self { queue: Vec::new() }
+    }
+
+    /// Accepts an input, eligible `depth` ticks after it arrived.
+    pub fn push(&mut self, arrived_tick: u32, depth: u8, dx: Fx, dy: Fx) {
+        self.queue
+            .push((arrived_tick.saturating_add(depth as u32), dx, dy));
+    }
+
+    /// Removes and returns every input whose hold has expired, oldest first.
+    ///
+    /// Order is preserved because the server applies each one as a separate step, and
+    /// two inputs applied in the wrong order integrate to a different position.
+    pub fn release(&mut self, tick: u32) -> Vec<(Fx, Fx)> {
+        let mut out = Vec::new();
+        self.queue.retain(|&(due, dx, dy)| {
+            if due <= tick {
+                out.push((dx, dy));
+                false
+            } else {
+                true
+            }
+        });
+        out
+    }
+
+    pub fn len(&self) -> usize {
+        self.queue.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
+    }
+}
+
 /// Inputs the client has sent but the server has not confirmed.
 ///
 /// Bounded, because an unbounded buffer under sustained loss is a slow leak that
@@ -327,6 +382,46 @@ mod tests {
         history.acknowledge(2);
         let left: Vec<u32> = history.pending().iter().map(|e| e.sequence).collect();
         assert_eq!(left, vec![5]);
+    }
+
+    #[test]
+    fn a_zero_depth_buffer_releases_immediately() {
+        let mut buffer = InputBuffer::new();
+        buffer.push(10, 0, from_int(1), Fx::ZERO);
+        assert_eq!(buffer.release(10).len(), 1);
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn an_input_waits_exactly_its_depth() {
+        let mut buffer = InputBuffer::new();
+        buffer.push(10, 3, from_int(1), Fx::ZERO);
+        assert!(buffer.release(12).is_empty(), "released a tick early");
+        assert_eq!(buffer.release(13).len(), 1);
+    }
+
+    /// Two inputs applied in the wrong order integrate to a different position, so
+    /// the queue has to come out oldest first.
+    #[test]
+    fn released_inputs_keep_their_arrival_order() {
+        let mut buffer = InputBuffer::new();
+        buffer.push(0, 2, from_int(1), Fx::ZERO);
+        buffer.push(1, 2, from_int(2), Fx::ZERO);
+        let out = buffer.release(5);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].0, from_int(1));
+        assert_eq!(out[1].0, from_int(2));
+    }
+
+    /// The buffer holds inputs, it does not drop them. Anything not yet due stays.
+    #[test]
+    fn a_release_leaves_inputs_that_are_not_due() {
+        let mut buffer = InputBuffer::new();
+        buffer.push(0, 1, from_int(1), Fx::ZERO);
+        buffer.push(0, 9, from_int(2), Fx::ZERO);
+        assert_eq!(buffer.release(2).len(), 1);
+        assert_eq!(buffer.len(), 1);
+        assert_eq!(buffer.release(9).len(), 1);
     }
 
     #[test]

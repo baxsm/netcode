@@ -14,6 +14,7 @@ pub mod rng;
 pub mod run;
 pub mod scenario;
 pub mod sim;
+pub mod sweep;
 pub mod techniques;
 
 use wasm_bindgen::prelude::*;
@@ -62,6 +63,17 @@ pub fn config_len() -> u32 {
     boundary::CONFIG_LEN as u32
 }
 
+/// The core's own default configuration, in the same flat layout a caller sends.
+///
+/// Exposed so the TypeScript mirror can be asserted against it rather than holding a
+/// copy that claims to match. A copy silently drifts: changing the core's default
+/// input buffer left the mirror a tick apart, and every test still passed because
+/// both sides only ever compared against themselves.
+#[wasm_bindgen]
+pub fn default_config() -> Vec<f64> {
+    boundary::config_to_buffer(&config::NetcodeConfig::default())
+}
+
 /// Rejects a configuration that cannot mean what it says, returning the reason code
 /// or zero when it is valid.
 ///
@@ -89,6 +101,18 @@ pub fn peekers_advantage_ms(rtt_ms: u32, tick_rate: u32, client_fps: u32) -> f64
 #[wasm_bindgen]
 pub fn snapshot_stride() -> u32 {
     boundary::SNAPSHOT_STRIDE as u32
+}
+
+/// Values per point in the buffer `run_sweep` returns.
+#[wasm_bindgen]
+pub fn sweep_stride() -> u32 {
+    boundary::SWEEP_STRIDE as u32
+}
+
+/// Values per segment in the buffer `run_sweep` takes.
+#[wasm_bindgen]
+pub fn sweep_segment_stride() -> u32 {
+    boundary::SWEEP_SEGMENT_STRIDE as u32
 }
 
 /// Values per frame record in the buffer `run_frames` returns.
@@ -195,6 +219,50 @@ pub fn run_metrics_custom(
         segment,
         seed,
         boundary::config_from_buffer(&config),
+    )
+}
+
+/// Runs a block of the configuration grid and returns one aggregated point per
+/// configuration.
+///
+/// Configurations arrive laid end to end rather than one call each. A run costs about
+/// 0.4 ms and a worker round trip costs about the same, so a sweep of thousands issued
+/// one at a time would spend as long on messaging as on simulating. The pool splits
+/// the grid and each worker calls this once.
+#[allow(clippy::too_many_arguments)]
+#[wasm_bindgen]
+pub fn run_sweep(
+    tick_rate: u32,
+    duration_ticks: u32,
+    accel: i32,
+    max_speed: i32,
+    friction_permille: u32,
+    bounds: i32,
+    move_from_tick: u32,
+    stop_at_tick: u32,
+    configs: Vec<f64>,
+    segments: Vec<f64>,
+    seeds: Vec<f64>,
+) -> Vec<f64> {
+    let scenario = boundary::build_scenario(&boundary::BuildScenario {
+        tick_rate,
+        duration_ticks,
+        accel,
+        max_speed,
+        friction_permille,
+        bounds,
+        move_from_tick,
+        stop_at_tick,
+    });
+    // seeds cross as f64 because a Vec<u64> would marshal as BigInt64Array, and the
+    // sweep's seeds are small counting numbers rather than the full u64 range the
+    // determinism gate uses
+    let seed_list: Vec<u64> = seeds.iter().map(|&s| s.max(0.0) as u64).collect();
+    boundary::sweep_buffer(
+        &scenario,
+        &boundary::configs_from_buffer(&configs),
+        &boundary::segments_from_buffer(&segments),
+        &seed_list,
     )
 }
 

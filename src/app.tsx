@@ -1,30 +1,26 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SimPool, type Comparison } from "./workers/pool";
-import TechniqueControls from "./components/technique-controls";
-import ComparisonTable from "./components/comparison-table";
-import PeekersPanel from "./components/peekers-panel";
-import ReplayTheatre from "./components/replay-theatre";
-import {
-  DEFAULT_CONFIG,
-  DEFAULT_SCENARIO,
-  SEGMENT_PRESETS,
-  describeConfigError,
-  type NetcodeConfig,
-} from "./sim/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { SimPool } from "./workers/pool";
+import ReplayPage from "./pages/replay-page";
+import TunePage from "./pages/tune-page";
+import { hrefFor, ROUTE_LABELS, ROUTES, useRoute, type Route } from "./router";
 
-type Status = "idle" | "running" | "done" | "failed";
-
-const SEED = 42n;
+/**
+ * Routes that exist in the navigation but are not built yet.
+ *
+ * Listed rather than hidden: the product is four routes, and a nav that silently
+ * omits two would misrepresent what is planned. What it must not do is render a
+ * convincing empty page, which would read as a feature that works and returns
+ * nothing.
+ */
+const PENDING: Partial<Record<Route, string>> = {
+  "/scenarios": "Scenario and network profile authoring.",
+  "/verify": "The Riot reproduction, the determinism check, and the failure demos.",
+};
 
 export default function App() {
   const poolRef = useRef<SimPool | null>(null);
-  const [config, setConfig] = useState<NetcodeConfig>(DEFAULT_CONFIG);
-  const [rows, setRows] = useState<Comparison[]>([]);
   const [version, setVersion] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
-  const [error, setError] = useState("");
-  const [invalid, setInvalid] = useState("");
-  const [progress, setProgress] = useState({ completed: 0, total: 0 });
+  const route = useRoute();
 
   /**
    * Created on demand rather than during render.
@@ -46,123 +42,60 @@ export default function App() {
     };
   }, []);
 
-  const run = useCallback(
-    async (using: NetcodeConfig) => {
-      const pool = poolFor();
-
-      setStatus("running");
-      setError("");
-      setProgress({ completed: 0, total: SEGMENT_PRESETS.length * 2 });
-
-      try {
-        setVersion(await pool.version());
-
-        // the core rejects contradictory combinations, so a run is never spent
-        // producing a number that quietly came from a different configuration
-        const code = await pool.validate(using);
-        if (code !== 0) {
-          setInvalid(describeConfigError(code));
-          setRows([]);
-          setStatus("done");
-          return;
-        }
-        setInvalid("");
-
-        const indices = SEGMENT_PRESETS.map((_, i) => i);
-        setRows(await pool.runComparison(DEFAULT_SCENARIO, indices, SEED, using, setProgress));
-        setStatus("done");
-      } catch (cause) {
-        // a run in flight when the pool is disposed rejects, and reporting that as a
-        // failure would show an error the user never caused
-        if (poolRef.current !== pool) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
-        setStatus("failed");
-      }
-    },
-    [poolFor],
-  );
-
-  // the initial run only. `config` is deliberately read through the ref rather than
-  // depended on, because re-running on every toggle would fire a sweep mid-edit
-  const initial = useRef(config);
   useEffect(() => {
-    void run(initial.current);
-  }, [run]);
+    let live = true;
+    poolFor()
+      .version()
+      .then((v) => {
+        if (live) setVersion(v);
+      })
+      // the fingerprint is chrome. a failure to read it must not take down the page
+      // that is trying to show a result
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [poolFor]);
 
-  const enabledCount = useMemo(
-    () => Object.values(config.techniques).filter(Boolean).length,
-    [config.techniques],
-  );
-
-  const running = status === "running";
+  const pending = PENDING[route];
 
   return (
-    <main>
-      <header>
-        <h1>netcode</h1>
-        <p>
-          The same moment on a lossy link, seen three ways: what the server holds, and
-          what each client draws while predicting it. Corrections flash red, rollbacks
-          violet.
-        </p>
-      </header>
+    <>
+      <nav className="top-bar" aria-label="Sections">
+        <div className="top-bar-inner">
+          <span className="wordmark">netcode</span>
+          <ul>
+            {ROUTES.map((r) => (
+              <li key={r}>
+                <a href={hrefFor(r)} aria-current={route === r ? "page" : undefined}>
+                  {ROUTE_LABELS[r]}
+                </a>
+              </li>
+            ))}
+          </ul>
+          {version ? (
+            // the build flags travel with every result, because a number is only
+            // meaningful next to the build that produced it
+            <code data-testid="version">core {version}</code>
+          ) : null}
+        </div>
+      </nav>
 
-      <ReplayTheatre pool={poolFor} config={config} />
-
-      <h2 className="section-heading">Measured across every preset</h2>
-      <p className="note">
-        Every network preset run twice on one seeded scenario: once with no
-        compensation, once with the techniques below. The difference between the two is
-        what these techniques buy on that link.
-      </p>
-
-      <TechniqueControls
-        config={config}
-        disabled={running}
-        onChange={setConfig}
-        onRun={() => void run(config)}
-      />
-
-      <section className="controls">
-        <button type="button" onClick={() => void run(config)} disabled={running}>
-          {running ? "Running" : "Run comparison"}
-        </button>
-        <span className="muted">
-          {enabledCount} of 6 techniques on, seed {String(SEED)}
-        </span>
-      </section>
-
-      {running ? (
-        <p className="state" data-testid="progress">
-          {progress.completed} of {progress.total} runs
-        </p>
-      ) : null}
-
-      {status === "failed" ? (
-        <p className="state error" data-testid="error" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      {invalid ? (
-        <p className="state error" data-testid="invalid" role="alert">
-          {invalid}
-        </p>
-      ) : null}
-
-      {rows.length > 0 && !invalid ? (
-        <ComparisonTable rows={rows} scenario={DEFAULT_SCENARIO} seed={SEED} />
-      ) : null}
-
-      <PeekersPanel pool={poolFor} />
-
-      {version ? (
-        <footer>
-          {/* the build flags travel with every result, because a number is only
-              meaningful next to the build that produced it */}
-          <code data-testid="version">core {version}</code>
-        </footer>
-      ) : null}
-    </main>
+      <main>
+        {route === "/" ? <ReplayPage pool={poolFor} /> : null}
+        {route === "/tune" ? <TunePage pool={poolFor} coreVersion={version} /> : null}
+        {pending ? (
+          <>
+            <header>
+              <h1>{ROUTE_LABELS[route]}</h1>
+              <p>{pending}</p>
+            </header>
+            <p className="state" data-testid="not-built">
+              Not built yet. This route is part of the next phase.
+            </p>
+          </>
+        ) : null}
+      </main>
+    </>
   );
 }

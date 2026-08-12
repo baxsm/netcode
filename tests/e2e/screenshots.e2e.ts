@@ -71,4 +71,28 @@ test.describe("baselines", () => {
     await settle(page, 200);
     await expect(page).toHaveScreenshot("theatre-mobile.png", { fullPage: true });
   });
+
+  /**
+   * The sweep is as deterministic as the replay, so its chart is a stable baseline
+   * too. The selected point is chosen by the code rather than by a click, which keeps
+   * the capture independent of where a marker happens to land.
+   */
+  test("the tune page before a sweep", async ({ page }) => {
+    await page.goto("/#/tune");
+    await expect(page.getByTestId("sweep-empty")).toBeVisible({ timeout: 30_000 });
+    await expect(page).toHaveScreenshot("tune-empty.png", { clip: TOP });
+  });
+
+  test("the pareto front", async ({ page }) => {
+    await page.goto("/#/tune");
+    await page.getByTestId("run-sweep").click();
+    await expect(page.getByTestId("front-size")).toBeVisible({ timeout: 60_000 });
+
+    // the elapsed time is in the heading and changes every run, so it is masked
+    // rather than left to fail a baseline for a reason that is not visual
+    await expect(page).toHaveScreenshot("tune-front.png", {
+      fullPage: true,
+      mask: [page.getByTestId("front-size")],
+    });
+  });
 });

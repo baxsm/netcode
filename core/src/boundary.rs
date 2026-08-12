@@ -12,6 +12,7 @@ use crate::net::{LossModel, NetworkSegment};
 use crate::replay::{replay, ReplayRequest};
 use crate::run::{run, RunRequest};
 use crate::scenario::{EntityKind, EntitySpec, InputAction, InputEvent, Scenario, WorldConfig};
+use crate::sweep::{sweep, SweepRequest, WeightedSegment};
 
 /// Field count of the metrics buffer. The TypeScript side asserts this, so adding a
 /// metric without updating the mirror fails a test rather than silently shifting
@@ -27,6 +28,14 @@ pub const CONFIG_LEN: usize = 13;
 
 /// Values per snapshot: tick, then server x/y/vx/vy, then client x/y/vx/vy.
 pub const SNAPSHOT_STRIDE: usize = 9;
+
+/// Values per sweep point: a full metrics record, then the two scores and the two
+/// halves of the config hash.
+///
+/// `METRICS_LEN` already covers the aggregated metrics and the combined state hash,
+/// so this builds on it rather than restating a number. Adding a metric moves the
+/// scores along with it instead of shifting them out from under the reader.
+pub const SWEEP_STRIDE: usize = METRICS_LEN + 4;
 
 /// Values per client inside a replay frame.
 ///
@@ -136,6 +145,63 @@ pub struct CustomSegment {
     pub burst_loss: bool,
 }
 
+/// Values per segment in the sweep's segment buffer: weight in permille, then the
+/// six condition fields.
+pub const SWEEP_SEGMENT_STRIDE: usize = 7;
+
+/// Reads the weighted segments the sweep aggregates over.
+///
+/// Weights cross as permille integers, matching how every other rate crosses this
+/// boundary, so no decimal literal is parsed through a float on the way in.
+pub fn segments_from_buffer(values: &[f64]) -> Vec<WeightedSegment> {
+    values
+        .chunks_exact(SWEEP_SEGMENT_STRIDE)
+        .map(|c| WeightedSegment {
+            weight: ratio(c[0].clamp(0.0, 1_000_000.0) as i32, 1000),
+            segment: custom_segment(&CustomSegment {
+                rtt_mean_ms: c[1].clamp(0.0, 60_000.0) as u32,
+                rtt_jitter_ms: c[2].clamp(0.0, 60_000.0) as u32,
+                loss_pct: c[3].clamp(0.0, 100.0) as u32,
+                reorder_pct: c[4].clamp(0.0, 100.0) as u32,
+                duplicate_pct: c[5].clamp(0.0, 100.0) as u32,
+                burst_loss: c[6] != 0.0,
+            }),
+        })
+        .collect()
+}
+
+/// Writes a config into the flat layout `config_from_buffer` reads.
+///
+/// The inverse of that function, and asserted to round trip. Rates cross as permille
+/// integers, so they are scaled back on the way out.
+pub fn config_to_buffer(config: &NetcodeConfig) -> Vec<f64> {
+    let permille = |v: Fx| (v * from_int(1000)).round().to_num::<i64>() as f64;
+    let t = config.techniques;
+    vec![
+        f64::from(u8::from(t.client_prediction)),
+        f64::from(u8::from(t.server_reconciliation)),
+        f64::from(u8::from(t.entity_interpolation)),
+        f64::from(u8::from(t.extrapolation)),
+        f64::from(u8::from(t.server_rewind)),
+        f64::from(u8::from(t.rollback)),
+        f64::from(config.interpolation_delay_ticks),
+        f64::from(config.input_buffer_ticks),
+        f64::from(config.rollback_window_ticks),
+        permille(config.correction_blend_rate),
+        permille(config.snap_threshold),
+        f64::from(config.server_rewind_limit_ms),
+        f64::from(config.extrapolation_limit_ticks),
+    ]
+}
+
+/// Reads a block of configurations laid end to end, each `CONFIG_LEN` values wide.
+pub fn configs_from_buffer(values: &[f64]) -> Vec<NetcodeConfig> {
+    values
+        .chunks_exact(CONFIG_LEN)
+        .map(config_from_buffer)
+        .collect()
+}
+
 pub fn custom_segment(spec: &CustomSegment) -> NetworkSegment {
     NetworkSegment {
         weight: from_int(1),
@@ -188,6 +254,35 @@ pub fn config_from_buffer(values: &[f64]) -> NetcodeConfig {
     }
 }
 
+/// Writes one `Metrics` in the mirror's field order.
+///
+/// Shared by the single-run and sweep paths so the two cannot drift into writing the
+/// same fields in a different order.
+fn push_metrics(out: &mut Vec<f64>, m: &crate::run::Metrics) {
+    out.push(to_f64_for_display(m.divergence_mean));
+    out.push(to_f64_for_display(m.divergence_p99));
+    out.push(to_f64_for_display(m.divergence_max));
+    out.push(f64::from(m.correction_count));
+    out.push(to_f64_for_display(m.correction_magnitude_mean));
+    out.push(to_f64_for_display(m.correction_magnitude_max));
+    out.push(to_f64_for_display(m.input_latency_mean_ms));
+    out.push(f64::from(m.packets_sent));
+    out.push(f64::from(m.packets_dropped));
+    out.push(f64::from(m.sampled_ticks));
+    out.push(f64::from(m.rollback_count));
+    out.push(to_f64_for_display(m.rollback_depth_mean));
+    out.push(f64::from(m.snap_count));
+    out.push(to_f64_for_display(m.hit_registration_accuracy));
+    out.push(f64::from(m.shots_fired));
+    out.push(f64::from(m.shots_confirmed));
+}
+
+/// Splits a `u64` across two slots, since an `f64` cannot carry 64 bits intact.
+fn push_hash(out: &mut Vec<f64>, hash: u64) {
+    out.push(f64::from((hash >> 32) as u32));
+    out.push(f64::from(hash as u32));
+}
+
 /// Metrics as a flat buffer. Order is the contract; the TypeScript mirror reads the
 /// same indices and a test holds the two together.
 pub fn metrics_buffer(
@@ -203,28 +298,40 @@ pub fn metrics_buffer(
         config,
         capture_snapshots: false,
     });
-    let m = result.metrics;
-    vec![
-        to_f64_for_display(m.divergence_mean),
-        to_f64_for_display(m.divergence_p99),
-        to_f64_for_display(m.divergence_max),
-        f64::from(m.correction_count),
-        to_f64_for_display(m.correction_magnitude_mean),
-        to_f64_for_display(m.correction_magnitude_max),
-        to_f64_for_display(m.input_latency_mean_ms),
-        f64::from(m.packets_sent),
-        f64::from(m.packets_dropped),
-        f64::from(m.sampled_ticks),
-        f64::from(m.rollback_count),
-        to_f64_for_display(m.rollback_depth_mean),
-        f64::from(m.snap_count),
-        to_f64_for_display(m.hit_registration_accuracy),
-        f64::from(m.shots_fired),
-        f64::from(m.shots_confirmed),
-        // the hash is split because a u64 does not survive an f64 intact
-        f64::from((result.state_hash >> 32) as u32),
-        f64::from(result.state_hash as u32),
-    ]
+    let mut out = Vec::with_capacity(METRICS_LEN);
+    push_metrics(&mut out, &result.metrics);
+    push_hash(&mut out, result.state_hash);
+    out
+}
+
+/// A block of the configuration grid, run against every seed and every weighted
+/// segment, as a flat buffer of `SWEEP_STRIDE`-value records.
+///
+/// The caller passes many configurations in one call rather than one per call. A run
+/// costs roughly 0.4 ms and a worker round trip costs about the same, so a sweep of
+/// thousands would otherwise spend as long on messaging as on simulating.
+pub fn sweep_buffer(
+    scenario: &Scenario,
+    configs: &[NetcodeConfig],
+    segments: &[WeightedSegment],
+    seeds: &[u64],
+) -> Vec<f64> {
+    let points = sweep(SweepRequest {
+        scenario,
+        configs,
+        segments,
+        seeds,
+    });
+
+    let mut out = Vec::with_capacity(points.len() * SWEEP_STRIDE);
+    for point in points {
+        push_metrics(&mut out, &point.aggregated);
+        push_hash(&mut out, point.state_hash);
+        out.push(to_f64_for_display(point.responsiveness_score));
+        out.push(to_f64_for_display(point.smoothness_score));
+        push_hash(&mut out, point.config_hash);
+    }
+    out
 }
 
 /// Snapshots as a flat buffer of `SNAPSHOT_STRIDE`-value records.
@@ -462,6 +569,32 @@ mod tests {
     }
 
     #[test]
+    fn a_config_survives_a_round_trip_through_the_buffer() {
+        let original = NetcodeConfig::default();
+        assert_eq!(config_from_buffer(&config_to_buffer(&original)), original);
+
+        let tuned = NetcodeConfig {
+            techniques: TechniqueSet::from_bits(0b010101),
+            interpolation_delay_ticks: 7,
+            input_buffer_ticks: 4,
+            rollback_window_ticks: 12,
+            correction_blend_rate: ratio(350, 1000),
+            snap_threshold: ratio(8500, 1000),
+            server_rewind_limit_ms: 275,
+            extrapolation_limit_ticks: 9,
+        };
+        assert_eq!(config_from_buffer(&config_to_buffer(&tuned)), tuned);
+    }
+
+    #[test]
+    fn the_encoded_default_has_the_declared_length() {
+        assert_eq!(
+            config_to_buffer(&NetcodeConfig::default()).len(),
+            CONFIG_LEN
+        );
+    }
+
+    #[test]
     fn a_short_config_buffer_falls_back_to_the_default() {
         assert_eq!(config_from_buffer(&[1.0, 0.0]), NetcodeConfig::default());
         assert_eq!(config_from_buffer(&[]), NetcodeConfig::default());
@@ -569,6 +702,119 @@ mod tests {
             4 + FRAME_CLIENT_STRIDE * crate::replay::CLIENT_COUNT
         );
         assert_eq!(FRAME_STRIDE, 24);
+    }
+
+    fn segment_values() -> Vec<f64> {
+        // one segment at full weight, on an average-broadband-like link
+        vec![1000.0, 60.0, 15.0, 1.0, 0.0, 0.0, 0.0]
+    }
+
+    #[test]
+    fn the_sweep_buffer_is_a_whole_number_of_records() {
+        let s = build_scenario(&spec());
+        let configs = [NetcodeConfig::default(), NetcodeConfig::default()];
+        let buf = sweep_buffer(
+            &s,
+            &configs,
+            &segments_from_buffer(&segment_values()),
+            &[1, 2],
+        );
+        assert_eq!(buf.len() % SWEEP_STRIDE, 0);
+        assert_eq!(buf.len() / SWEEP_STRIDE, 2);
+    }
+
+    /// The stride must match what is actually written. A record that writes fewer
+    /// values than it declares would shift every point after the first.
+    #[test]
+    fn the_declared_stride_matches_what_a_point_writes() {
+        let s = build_scenario(&spec());
+        let buf = sweep_buffer(
+            &s,
+            &[NetcodeConfig::default()],
+            &segments_from_buffer(&segment_values()),
+            &[1],
+        );
+        assert_eq!(buf.len(), SWEEP_STRIDE);
+        assert_eq!(SWEEP_STRIDE, METRICS_LEN + 4);
+    }
+
+    /// The metrics inside a sweep point must sit at the same indices the single-run
+    /// buffer uses, since the mirror decodes both with one reader.
+    #[test]
+    fn a_single_config_single_seed_point_matches_the_direct_run() {
+        let s = build_scenario(&spec());
+        let segment = custom_segment(&CustomSegment {
+            rtt_mean_ms: 60,
+            rtt_jitter_ms: 15,
+            loss_pct: 1,
+            reorder_pct: 0,
+            duplicate_pct: 0,
+            burst_loss: false,
+        });
+        let direct = metrics_buffer(&s, segment, 5, NetcodeConfig::default());
+        let swept = sweep_buffer(
+            &s,
+            &[NetcodeConfig::default()],
+            &segments_from_buffer(&segment_values()),
+            &[5],
+        );
+
+        // one segment and one seed means the aggregate is the run itself, so every
+        // metric must land identically. only the trailing scores differ
+        assert_eq!(&swept[..METRICS_LEN - 2], &direct[..METRICS_LEN - 2]);
+    }
+
+    #[test]
+    fn every_sweep_value_is_finite() {
+        let s = build_scenario(&spec());
+        let configs = [
+            NetcodeConfig::default(),
+            NetcodeConfig {
+                techniques: TechniqueSet::NONE,
+                ..NetcodeConfig::default()
+            },
+        ];
+        let mut segments = segment_values();
+        segments.extend([500.0, 200.0, 60.0, 8.0, 3.0, 2.0, 1.0]);
+
+        let buf = sweep_buffer(&s, &configs, &segments_from_buffer(&segments), &[1, 2, 3]);
+        for (i, v) in buf.iter().enumerate() {
+            assert!(v.is_finite(), "value {i} was not finite");
+        }
+    }
+
+    #[test]
+    fn segments_decode_their_weight_and_conditions() {
+        let decoded = segments_from_buffer(&[750.0, 120.0, 30.0, 4.0, 2.0, 1.0, 1.0]);
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].weight, ratio(750, 1000));
+        assert_eq!(decoded[0].segment.rtt_mean_ms, 120);
+        assert_eq!(decoded[0].segment.loss_pct, 4);
+        assert!(matches!(
+            decoded[0].segment.loss_model,
+            LossModel::GilbertElliott { .. }
+        ));
+    }
+
+    /// A trailing partial record is dropped rather than read past the end or padded
+    /// with zeros, which would invent a segment the caller never asked for.
+    #[test]
+    fn a_partial_segment_record_is_ignored() {
+        assert_eq!(segments_from_buffer(&[1000.0, 60.0, 15.0]).len(), 0);
+        assert_eq!(
+            segments_from_buffer(&[1000.0, 60.0, 15.0, 1.0, 0.0, 0.0, 0.0, 500.0]).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn configs_decode_one_per_block() {
+        let mut buf = config_values();
+        buf.extend(config_values());
+        let decoded = configs_from_buffer(&buf);
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0], decoded[1]);
+        assert_eq!(decoded[0].interpolation_delay_ticks, 3);
     }
 
     #[test]

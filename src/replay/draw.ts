@@ -16,11 +16,17 @@ import { flashAt, lerp, type Cursor } from "./playback";
  * Reserved so a flash is unambiguous. A correction is the only red on screen and a
  * rollback the only violet, which is what lets a glance identify an event without a
  * legend lookup.
+ *
+ * The two clients are cyan and amber rather than blue and green. Blue is the colour of
+ * every link and control in the chrome, so a blue entity read as interactive, and green
+ * is the passing verdict on `/verify`. Cyan against amber also separates under
+ * deuteranopia and protanopia, which blue against green does not, and entity identity
+ * is carried by colour here.
  */
 export const COLOURS = {
-  server: "#8b949e",
-  clientA: "#58a6ff",
-  clientB: "#3fb950",
+  server: "#c9d1d9",
+  clientA: "#2dd4bf",
+  clientB: "#f0b429",
   correction: "#f85149",
   rollback: "#bc8cff",
   rewind: "#f0883e",

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FC } from "react";
+import Icon from "../components/icon";
 import InputScriptEditor from "../components/input-script-editor";
 import ProfileEditor from "../components/profile-editor";
 import ScenarioEditor from "../components/scenario-editor";
@@ -183,14 +184,12 @@ const ScenariosPage: FC = () => {
           </select>
         </div>
 
-        <button type="button" className="ghost" onClick={duplicate} data-testid="duplicate">
+        {/* the primary action on this page: a built-in cannot be edited, so duplicating
+            one is how any authoring starts, and the copy above says so */}
+        <button type="button" onClick={duplicate} data-testid="duplicate">
+          <Icon name="copy" />
           Duplicate
         </button>
-        {scenarioReadOnly ? null : (
-          <button type="button" className="ghost" onClick={removeScenario} data-testid="delete">
-            Delete
-          </button>
-        )}
         <button
           type="button"
           className="ghost"
@@ -198,8 +197,14 @@ const ScenariosPage: FC = () => {
           disabled={scenarioProblems.length > 0}
           onClick={() => scenario && navigate("/", { scenario: scenario.id })}
         >
+          <Icon name="external" />
           Open in replay
         </button>
+        {scenarioReadOnly ? null : (
+          <button type="button" className="quiet" onClick={removeScenario} data-testid="delete">
+            Delete
+          </button>
+        )}
       </section>
 
       {scenario ? (
@@ -247,18 +252,14 @@ const ScenariosPage: FC = () => {
           </select>
         </div>
 
-        <button
-          type="button"
-          className="ghost"
-          onClick={duplicateCurrentProfile}
-          data-testid="duplicate-profile"
-        >
+        <button type="button" onClick={duplicateCurrentProfile} data-testid="duplicate-profile">
+          <Icon name="copy" />
           Duplicate
         </button>
         {profileReadOnly ? null : (
           <button
             type="button"
-            className="ghost"
+            className="quiet"
             onClick={removeProfile}
             data-testid="delete-profile"
           >
@@ -288,6 +289,7 @@ const ScenariosPage: FC = () => {
                 downloadJson("netcode-scenarios.json", JSON.stringify(toExport(authored), null, 2))
               }
             >
+              <Icon name="download" />
               Export yours
             </button>
             <button
@@ -296,6 +298,7 @@ const ScenariosPage: FC = () => {
               data-testid="import"
               onClick={() => fileInput.current?.click()}
             >
+              <Icon name="upload" />
               Import
             </button>
           </div>

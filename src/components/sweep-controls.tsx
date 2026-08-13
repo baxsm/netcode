@@ -1,4 +1,5 @@
 import type { FC } from "react";
+import Icon from "./icon";
 import type { AuthoredScenario } from "../scenarios/store";
 import { DEFAULT_SEED_COUNT, TECHNIQUE_PRESETS, type SweepPlan } from "../sweep/grid";
 import { describeSegment, totalWeight, weightsAreWhole } from "../sweep/profiles";
@@ -149,6 +150,7 @@ const SweepControls: FC<SweepControlsProps> = ({
 
     <div className="sweep-run">
       <button type="button" onClick={onRun} disabled={running} data-testid="run-sweep">
+        <Icon name="run" className={running ? "spin" : undefined} />
         {running ? "Sweeping" : "Run sweep"}
       </button>
       <span className="muted" data-testid="sweep-size">

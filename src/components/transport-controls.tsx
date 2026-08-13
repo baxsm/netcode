@@ -1,4 +1,5 @@
 import type { FC } from "react";
+import Icon from "./icon";
 import { tickToMs, type Cursor } from "../replay/playback";
 
 interface TransportControlsProps {
@@ -35,6 +36,7 @@ const TransportControls: FC<TransportControlsProps> = ({
     <div className="transport">
       <div className="transport-buttons">
         <button type="button" onClick={onPlayPause} disabled={disabled} data-testid="play">
+          <Icon name={playing ? "pause" : "play"} />
           {playing ? "Pause" : "Play"}
         </button>
         <button
@@ -44,6 +46,7 @@ const TransportControls: FC<TransportControlsProps> = ({
           disabled={disabled || cursor.tick <= 0}
           data-testid="step-back"
         >
+          <Icon name="step-back" />
           Step back
         </button>
         <button
@@ -53,6 +56,7 @@ const TransportControls: FC<TransportControlsProps> = ({
           disabled={disabled || cursor.tick >= last}
           data-testid="step-forward"
         >
+          <Icon name="step-forward" />
           Step forward
         </button>
       </div>

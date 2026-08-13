@@ -1,4 +1,5 @@
 import type { FC } from "react";
+import Verdict from "./verdict";
 import { TOLERANCE_MS, allPassed, type OracleRow } from "../verify/oracle";
 
 interface OracleTableProps {
@@ -11,12 +12,9 @@ const OracleTable: FC<OracleTableProps> = ({ rows, running }) => (
     <div className="panel-head">
       <h2 id="oracle-heading">The published reproduction</h2>
       {rows.length > 0 ? (
-        <span
-          className={allPassed(rows) ? "verdict pass" : "verdict fail"}
-          data-testid="oracle-verdict"
-        >
+        <Verdict passed={allPassed(rows)} testId="oracle-verdict">
           {allPassed(rows) ? "All three match" : "A row is outside tolerance"}
-        </span>
+        </Verdict>
       ) : null}
     </div>
 
@@ -72,10 +70,7 @@ const OracleTable: FC<OracleTableProps> = ({ rows, running }) => (
                   {row.deltaMs.toFixed(1)} ms
                 </td>
                 <td>
-                  {/* the word carries the result, not the colour alone */}
-                  <span className={row.passed ? "verdict pass" : "verdict fail"}>
-                    {row.passed ? "Pass" : "Fail"}
-                  </span>
+                  <Verdict passed={row.passed}>{row.passed ? "Pass" : "Fail"}</Verdict>
                 </td>
               </tr>
             ))}

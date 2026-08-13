@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FC } from "react";
 import ComparisonTable from "../components/comparison-table";
+import Icon from "../components/icon";
 import PeekersPanel from "../components/peekers-panel";
 import ReplayTheatre from "../components/replay-theatre";
 import TechniqueControls from "../components/technique-controls";
@@ -159,6 +160,7 @@ const ReplayPage: FC<ReplayPageProps> = ({ pool }) => {
 
       <section className="controls">
         <button type="button" onClick={() => void run(config)} disabled={running}>
+          <Icon name="run" className={running ? "spin" : undefined} />
           {running ? "Running" : "Run comparison"}
         </button>
         <span className="muted">

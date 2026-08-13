@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FC } from "react";
+import Verdict from "./verdict";
 import type { SimPool } from "../workers/pool";
 import { BUILT_IN_SCENARIOS } from "../scenarios/store";
 import { DEFAULT_CONFIG } from "../sim/types";
@@ -99,9 +100,9 @@ const DeterminismPanel: FC<DeterminismPanelProps> = ({ pool, coreVersion }) => {
       <div className="panel-head">
         <h2 id="determinism-heading">Determinism</h2>
         {results.length > 0 ? (
-          <span className={held ? "verdict pass" : "verdict fail"} data-testid="determinism-verdict">
+          <Verdict passed={held} testId="determinism-verdict">
             {held ? "Stable and seed dependent" : "Hashes disagree"}
-          </span>
+          </Verdict>
         ) : null}
       </div>
 
@@ -149,9 +150,9 @@ const DeterminismPanel: FC<DeterminismPanelProps> = ({ pool, coreVersion }) => {
                     </td>
                     <td>{result.hashes.length}</td>
                     <td>
-                      <span className={unique === 1 ? "verdict pass" : "verdict fail"}>
+                      <Verdict passed={unique === 1}>
                         {unique === 1 ? "Identical" : `${unique} different hashes`}
-                      </span>
+                      </Verdict>
                     </td>
                   </tr>
                 );

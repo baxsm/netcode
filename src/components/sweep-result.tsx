@@ -1,4 +1,5 @@
 import type { FC } from "react";
+import Icon from "./icon";
 import type { ScenarioSpec, SweepPoint } from "../sim/types";
 import { configRows, metricRows } from "../sweep/metrics-view";
 import { differences } from "../sweep/pareto";
@@ -49,12 +50,15 @@ const SweepResult: FC<SweepResultProps> = ({
         </h2>
         <div className="panel-actions">
           <button type="button" className="ghost" onClick={onOpenReplay}>
+            <Icon name="external" />
             Open in replay
           </button>
           <button type="button" className="ghost" onClick={onExportConfig}>
+            <Icon name="download" />
             Export config
           </button>
           <button type="button" className="ghost" onClick={onExportReport}>
+            <Icon name="download" />
             Export report
           </button>
         </div>
@@ -111,7 +115,8 @@ const SweepResult: FC<SweepResultProps> = ({
         <div className="diff" data-testid="config-diff">
           <div className="panel-head">
             <h3 className="sub-heading">What differs between the two</h3>
-            <button type="button" className="ghost" onClick={onClearComparison}>
+            <button type="button" className="quiet" onClick={onClearComparison}>
+              <Icon name="cross" />
               Clear comparison
             </button>
           </div>

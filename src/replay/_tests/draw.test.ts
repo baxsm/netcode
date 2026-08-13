@@ -98,6 +98,58 @@ describe("event colours", () => {
   });
 
   /**
+   * Equality is too weak a test for a colour. Two entities can carry different hex
+   * strings and still be one colour to the eye, which is the failure that matters when
+   * identity is carried by colour.
+   *
+   * Distance is measured on the red-green and blue-yellow axes rather than on raw RGB,
+   * because those are the two axes the common deficiencies collapse.
+   *
+   * The shipped palette's closest pair sits at 167 and the blue-green pairing this
+   * replaced sat at 127, so the threshold goes between them. Set any lower and the
+   * palette it was written to rule out would pass it.
+   */
+  it("separates the entities on the axes colour vision deficiencies collapse", () => {
+    const rgb = (hex: string) => [
+      Number.parseInt(hex.slice(1, 3), 16),
+      Number.parseInt(hex.slice(3, 5), 16),
+      Number.parseInt(hex.slice(5, 7), 16),
+    ];
+    // the two opponent axes, which is what a deficiency flattens. a pair that differs
+    // only in lightness survives this and should, since lightness is not a deficiency
+    const opponents = (hex: string) => {
+      const [r, g, b] = rgb(hex) as [number, number, number];
+      return [r - g, b - (r + g) / 2];
+    };
+    const apart = (left: string, right: string) => {
+      const a = opponents(left);
+      const b = opponents(right);
+      return Math.hypot((a[0] ?? 0) - (b[0] ?? 0), (a[1] ?? 0) - (b[1] ?? 0));
+    };
+
+    const entities = [COLOURS.server, COLOURS.clientA, COLOURS.clientB];
+    for (let i = 0; i < entities.length; i += 1) {
+      for (let j = i + 1; j < entities.length; j += 1) {
+        expect(apart(entities[i] as string, entities[j] as string)).toBeGreaterThan(150);
+      }
+    }
+  });
+
+  /**
+   * The chrome's accent is on every link, button and focus ring. An entity sharing it
+   * reads as something you can click, and the ghost grey is a different thing again
+   * from the authority it sits behind.
+   */
+  it("keeps the entities clear of the interface's own colours", () => {
+    const chrome = { accent: "#58a6ff", pass: "#3fb950" };
+    for (const entity of [COLOURS.clientA, COLOURS.clientB]) {
+      expect(entity).not.toBe(chrome.accent);
+      expect(entity).not.toBe(chrome.pass);
+    }
+    expect(COLOURS.server).not.toBe(COLOURS.ghost);
+  });
+
+  /**
    * At 144 FPS and a 64 Hz tick, a one tick hold is roughly two frames. The hold has to
    * be long enough that a correction registers rather than reading as a feature that
    * never fires.

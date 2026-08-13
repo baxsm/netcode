@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FC } from "react";
+import Icon from "./icon";
+import Verdict from "./verdict";
 import type { SimPool } from "../workers/pool";
 import { useNavigate } from "../router";
 import { useScenarios } from "../scenarios/use-scenarios";
@@ -117,9 +119,9 @@ const FailureDemos: FC<FailureDemosProps> = ({ pool }) => {
               <li key={demo.id} data-testid="demo">
                 <div className="demo-head">
                   <h3>{demo.title}</h3>
-                  <span className={holds ? "verdict pass" : "verdict fail"}>
+                  <Verdict passed={holds}>
                     {holds ? "Reproduces" : "Did not reproduce"}
-                  </span>
+                  </Verdict>
                 </div>
 
                 <p>{demo.symptom}</p>
@@ -157,6 +159,7 @@ const FailureDemos: FC<FailureDemosProps> = ({ pool }) => {
                     })
                   }
                 >
+                  <Icon name="external" />
                   Open the broken run in replay
                 </button>
               </li>

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { choose } from "./controls";
 
 /**
  * Drives the real sweep: worker pool, batched WASM calls, front computation and the
@@ -54,12 +55,18 @@ test("runs a sweep and draws a front", async ({ page }) => {
   const front = page.getByTestId("front-size");
   await expect(front).toContainText(/\d+ of \d+ on the front/);
 
-  // every configuration must produce a point, or the front was computed over a
-  // subset while still presenting as the whole search
+  // every configuration must be accounted for, or the front was computed over a
+  // subset while still presenting as the whole search. marks can stand for several
+  // configurations that measured the same, so they are summed rather than counted
   const size = await page.getByTestId("sweep-size").innerText();
   const configured = Number.parseInt(size.match(/(\d+) configurations/)?.[1] ?? "0", 10);
-  const drawn = await page.locator(".chart svg circle").count();
-  expect(drawn).toBe(configured);
+  const accounted = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid^="point-"]')].reduce((sum, n) => {
+      const group = /(\d+) configurations measured the same/.exec(n.getAttribute("aria-label") ?? "");
+      return sum + (group ? Number(group[1]) : 1);
+    }, 0),
+  );
+  expect(accounted).toBe(configured);
 });
 
 test("selects a point and shows its configuration in player units", async ({ page }) => {
@@ -78,9 +85,9 @@ test("selects a point and shows its configuration in player units", async ({ pag
 test("reports the resolution floor rather than implying false precision", async ({ page }) => {
   await ready(page);
   await runSweep(page);
-  await expect(page.locator(".panel", { hasText: "The tradeoff" })).toContainText(
-    /Differences smaller than 0\.\d+/,
-  );
+  await expect(
+    page.locator('[data-slot="card"]', { hasText: "The tradeoff" }),
+  ).toContainText(/Differences smaller than 0\.\d+/);
 });
 
 test("a second sweep reproduces the first", async ({ page }) => {
@@ -101,7 +108,7 @@ test("changing the population changes the answer", async ({ page }) => {
   await runSweep(page);
   const before = await page.getByTestId("result-metrics").innerText();
 
-  await page.locator("#profile").selectOption("competitive");
+  await choose(page.locator("#profile"), "Competitive");
   await page.getByTestId("run-sweep").click();
   await expect(page.getByTestId("front-size")).toBeVisible({ timeout: 60_000 });
 
@@ -118,52 +125,26 @@ test("comparing two points shows only what differs", async ({ page }) => {
   await chart.scrollIntoViewIfNeeded();
 
   /**
-   * Two points chosen by their drawn position rather than by index.
+   * Two marks chosen by drawn position, so they are certainly different
+   * configurations rather than two indices that happen to measure the same.
    *
-   * Configurations that produce the same latency and the same worst correction land
-   * on the same pixel, and many do: the chart is 216 points in a handful of columns.
-   * Clicking two arbitrary indices can therefore select one configuration twice,
-   * which correctly renders as "identical" and fails an assertion about a diff.
-   * Picking the leftmost and rightmost drawn positions guarantees two different
-   * input buffer depths.
+   * Clicked with a real pointer. An earlier version of this test dispatched synthetic
+   * events at a coordinate, because the chart's markers were decoration over an
+   * overlay that a real click could not reach. That workaround is what let a chart
+   * nobody could hover or click pass its own suite.
    */
-  const boxes = await chart.locator("svg circle").evaluateAll((nodes) =>
-    nodes.map((n) => {
-      const r = n.getBoundingClientRect();
-      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-    }),
-  );
-  const sorted = [...boxes].sort((a, b) => a.x - b.x);
-  const left = sorted[0];
-  const right = sorted[sorted.length - 1];
-  expect(left && right && right.x - left.x, "the chart must spread along latency").toBeGreaterThan(
-    20,
-  );
+  const ids = await page.evaluate(() => {
+    const nodes = [...document.querySelectorAll('[data-testid^="point-"]')];
+    const pts = nodes.map((n) => ({
+      id: n.getAttribute("data-testid") ?? "",
+      x: Number(n.getAttribute("cx")),
+    }));
+    pts.sort((a, b) => a.x - b.x);
+    return [pts[0]?.id ?? "", pts[pts.length - 1]?.id ?? ""];
+  });
 
-  /**
-   * Dispatched at the point's location rather than driven through `mouse.click`.
-   *
-   * Recharts binds its handlers to a layer above the markers, and Playwright's
-   * synthetic pointer sequence does not reach the shape's own `onClick` through it.
-   * The same gesture works in a real browser, verified by hand. Hit-testing the
-   * coordinate and firing the sequence at whatever is on top keeps this testing the
-   * selection behaviour rather than the driver.
-   */
-  const clickAt = (point: { x: number; y: number }, shift: boolean) =>
-    page.evaluate(
-      ({ x, y, shiftKey }) => {
-        const target = document.elementFromPoint(x, y);
-        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
-          target?.dispatchEvent(
-            new MouseEvent(type, { bubbles: true, clientX: x, clientY: y, shiftKey }),
-          );
-        }
-      },
-      { x: point.x, y: point.y, shiftKey: shift },
-    );
-
-  await clickAt(left as { x: number; y: number }, false);
-  await clickAt(right as { x: number; y: number }, true);
+  await page.getByTestId(ids[0] as string).click();
+  await page.getByTestId(ids[1] as string).click({ modifiers: ["Shift"] });
 
   const diff = page.getByTestId("config-diff");
   await expect(diff).toBeVisible();

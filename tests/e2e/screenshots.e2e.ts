@@ -18,10 +18,25 @@ const settle = async (page: Page, tick: number) => {
   await expect(page.getByTestId("theatre")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("tick-readout")).toContainText("of 399", { timeout: 30_000 });
 
-  // pause before scrubbing, so the cursor cannot move between the seek and the capture
+  /**
+   * Pause before scrubbing, so the cursor cannot move between the seek and the capture.
+   *
+   * Clicking once is not enough. The first run lands asynchronously and starts playback
+   * when it does, so a pause clicked before that resolves is undone a moment later and
+   * the capture then races a moving simulation. That failed roughly one run in three
+   * with "failed to take two consecutive stable screenshots", and the diff was the
+   * entities and the scrub handle in two different positions.
+   *
+   * So the pause is asserted to hold rather than to have happened.
+   */
   const play = page.getByTestId("play");
-  if ((await play.innerText()) === "Pause") await play.click();
-  await expect(play).toHaveText("Play");
+  await expect(async () => {
+    if ((await play.innerText()) === "Pause") await play.click();
+    await expect(play).toHaveText("Play");
+    // long enough for a run that landed mid-pause to have restarted playback
+    await page.waitForTimeout(150);
+    await expect(play).toHaveText("Play");
+  }).toPass({ timeout: 30_000 });
 
   await page.getByTestId("scrub").evaluate((el, v) => {
     const input = el as HTMLInputElement;
@@ -32,7 +47,15 @@ const settle = async (page: Page, tick: number) => {
   }, tick);
   await expect(page.getByTestId("tick-readout")).toContainText(`tick ${tick} `);
 
-  // one frame for the canvases to repaint from the new cursor
+  // the readout is React state and the canvases are painted in an effect, so hold until
+  // the tick has actually stopped moving rather than trusting a single frame
+  const readout = page.getByTestId("tick-readout");
+  await expect(async () => {
+    const first = await readout.innerText();
+    await page.waitForTimeout(120);
+    expect(await readout.innerText()).toBe(first);
+  }).toPass({ timeout: 10_000 });
+
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
 };
 
@@ -61,9 +84,25 @@ test.describe("baselines", () => {
     await expect(page).toHaveScreenshot("theatre-tick-0.png", { clip: TOP });
   });
 
+  /**
+   * The one baseline that is only a canvas, so it is the one that can be held to the
+   * pixel.
+   *
+   * The default per-pixel threshold is 0.2 in YIQ, which is sized for antialiasing and
+   * is far wider than a colour change. Moving client A from blue to cyan scores 0.019
+   * against it, so this baseline passed unchanged through a palette change that
+   * repainted every entity on it. Entity identity is carried by colour here, which
+   * makes a threshold that ignores hue the wrong tool for this frame.
+   *
+   * The full-page baselines keep the default, since they contain text and would then
+   * fail on font rasterisation rather than on anything about the view.
+   */
   test("a single view close up", async ({ page }) => {
     await settle(page, 200);
-    await expect(page.getByTestId("view-A")).toHaveScreenshot("view-a-tick-200.png");
+    await expect(page.getByTestId("view-A")).toHaveScreenshot("view-a-tick-200.png", {
+      threshold: 0,
+      maxDiffPixels: 0,
+    });
   });
 
   /** The narrow end of the supported range, where the three views stack. */

@@ -7,7 +7,12 @@ import {
   parseBaseline,
   type Baseline,
 } from "../check";
-import { METRIC_FIELDS, type Metrics } from "../../sim/types";
+import { METRIC_FIELDS, SEGMENT_PRESETS, type Metrics } from "../../sim/types";
+
+/** The mirror's own metric names and segment count, so a test cannot drift from what ships. */
+function parse(raw: string): Baseline {
+  return parseBaseline(raw, METRIC_FIELDS, SEGMENT_PRESETS.length);
+}
 
 function metrics(overrides: Partial<Metrics> = {}): Metrics {
   const base = Object.fromEntries(METRIC_FIELDS.map((f) => [f, 0])) as Record<
@@ -110,17 +115,15 @@ describe("the failure report", () => {
 
 describe("reading a baseline file", () => {
   it("accepts a well formed one", () => {
-    expect(parseBaseline(json(), METRIC_FIELDS).scenarioId).toBe("drift");
+    expect(parse(json()).scenarioId).toBe("drift");
   });
 
   it("rejects a file that is not JSON", () => {
-    expect(() => parseBaseline("{nope", METRIC_FIELDS)).toThrow(/not valid JSON/);
+    expect(() => parse("{nope")).toThrow(/not valid JSON/);
   });
 
   it("rejects a different schema version", () => {
-    expect(() => parseBaseline(json({ schemaVersion: 99 }), METRIC_FIELDS)).toThrow(
-      /schema version/,
-    );
+    expect(() => parse(json({ schemaVersion: 99 }))).toThrow(/schema version/);
   });
 
   /**
@@ -131,34 +134,55 @@ describe("reading a baseline file", () => {
     const bad = json({
       thresholds: [{ metric: "divergnceP99", comparison: "atMost", value: 2 }],
     });
-    expect(() => parseBaseline(bad, METRIC_FIELDS)).toThrow(/does not report/);
+    expect(() => parse(bad)).toThrow(/does not report/);
   });
 
   it("rejects an unknown comparison", () => {
     const bad = json({
       thresholds: [{ metric: "divergenceP99", comparison: "under", value: 2 }],
     });
-    expect(() => parseBaseline(bad, METRIC_FIELDS)).toThrow(/atMost or atLeast/);
+    expect(() => parse(bad)).toThrow(/atMost or atLeast/);
   });
 
   it("rejects a baseline with no thresholds", () => {
-    expect(() => parseBaseline(json({ thresholds: [] }), METRIC_FIELDS)).toThrow(
-      /no thresholds/,
-    );
+    expect(() => parse(json({ thresholds: [] }))).toThrow(/no thresholds/);
   });
 
   it("rejects a baseline with no seeds", () => {
-    expect(() => parseBaseline(json({ seeds: [] }), METRIC_FIELDS)).toThrow(/seed/);
+    expect(() => parse(json({ seeds: [] }))).toThrow(/seed/);
   });
 
   it("rejects a threshold with a value that is not a number", () => {
     const bad = json({
       thresholds: [{ metric: "divergenceP99", comparison: "atMost", value: "two" }],
     });
-    expect(() => parseBaseline(bad, METRIC_FIELDS)).toThrow(/finite value/);
+    expect(() => parse(bad)).toThrow(/finite value/);
   });
 
   it("rejects a baseline with no scenario", () => {
-    expect(() => parseBaseline(json({ scenarioId: "" }), METRIC_FIELDS)).toThrow(/scenarioId/);
+    expect(() => parse(json({ scenarioId: "" }))).toThrow(/scenarioId/);
+  });
+
+  /**
+   * The core resolves the preset index with a catch-all arm, because a numeric
+   * boundary has to be total. An index past the end therefore arrives as the hostile
+   * preset and measures a link the baseline never named, which reports as a quality
+   * regression on a build that is fine.
+   */
+  it("rejects a segment index past the last preset", () => {
+    expect(() => parse(json({ segmentIndex: SEGMENT_PRESETS.length }))).toThrow(
+      /this core has/,
+    );
+  });
+
+  it("rejects a negative segment index", () => {
+    expect(() => parse(json({ segmentIndex: -1 }))).toThrow(/this core has/);
+  });
+
+  /** The bound is off-by-one prone, so the last real preset must still be accepted. */
+  it("accepts the last preset", () => {
+    expect(parse(json({ segmentIndex: SEGMENT_PRESETS.length - 1 })).segmentIndex).toBe(
+      SEGMENT_PRESETS.length - 1,
+    );
   });
 });

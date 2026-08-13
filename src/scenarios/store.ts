@@ -113,7 +113,17 @@ export function isBuiltInProfile(id: string): boolean {
 
 export const EMPTY: Authored = { scenarios: [], profiles: [] };
 
-/** Limits that keep an authored scenario inside what the core will accept. */
+/**
+ * Limits that keep an authored scenario inside what the core will accept.
+ *
+ * Every field of the spec appears, not only the ones the editor draws. The core
+ * clamps what crosses the boundary because a numeric boundary has to be total, so a
+ * field left out here is repaired rather than rejected, and the file runs as
+ * something other than what it says.
+ *
+ * `moveFromTick` and `stopAtTick` only drive the fallback script, which is why they
+ * have no editor control. They still travel in an imported spec.
+ */
 export const LIMITS = {
   tickRate: { min: 1, max: 512 },
   durationTicks: { min: 1, max: 4000 },
@@ -121,6 +131,8 @@ export const LIMITS = {
   maxSpeed: { min: 1, max: 10_000 },
   frictionPermille: { min: 0, max: 1000 },
   bounds: { min: 1, max: 100_000 },
+  moveFromTick: { min: 0, max: 1_000_000 },
+  stopAtTick: { min: 0, max: 1_000_000 },
 } as const;
 
 export type LimitedField = keyof typeof LIMITS;
@@ -180,11 +192,22 @@ export function validateProfile(profile: NetworkProfile): string[] {
     if (!Number.isInteger(segment.weightPermille) || segment.weightPermille <= 0) {
       problems.push(`${at} needs a weight above zero.`);
     }
-    if (segment.rttMeanMs < 0 || segment.rttMeanMs > 60_000) {
-      problems.push(`${at} needs a round trip between 0 and 60000 ms.`);
+    // whole rather than just in range, because the core reads these as u32. A
+    // fractional round trip imports cleanly and then truncates, so the profile runs
+    // at conditions the file did not ask for
+    if (
+      !Number.isInteger(segment.rttMeanMs) ||
+      segment.rttMeanMs < 0 ||
+      segment.rttMeanMs > 60_000
+    ) {
+      problems.push(`${at} needs a whole round trip between 0 and 60000 ms.`);
     }
-    if (segment.rttJitterMs < 0 || segment.rttJitterMs > 60_000) {
-      problems.push(`${at} needs jitter between 0 and 60000 ms.`);
+    if (
+      !Number.isInteger(segment.rttJitterMs) ||
+      segment.rttJitterMs < 0 ||
+      segment.rttJitterMs > 60_000
+    ) {
+      problems.push(`${at} needs whole jitter between 0 and 60000 ms.`);
     }
     for (const rate of ["lossPct", "reorderPct", "duplicatePct"] as const) {
       const value = segment[rate];

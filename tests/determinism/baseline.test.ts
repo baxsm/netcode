@@ -83,6 +83,21 @@ describe("the CI baseline runner", () => {
     expect(run.output).toContain("not a built-in");
   });
 
+  /**
+   * The core resolves the preset index with a catch-all arm, so before this was
+   * checked an out-of-range index ran the hostile preset and missed three thresholds.
+   * That is exit 1, a quality regression, for what is really a typo in a file.
+   */
+  it("rejects a segment index past the last preset rather than measuring another link", () => {
+    const path = withBaseline((value) => {
+      value.segmentIndex = 99;
+    });
+    const run = runBaseline(path);
+    expect(run.status).toBe(2);
+    expect(run.output).toContain("this core has");
+    expect(run.output).not.toContain("FAIL");
+  });
+
   it("rejects a baseline from a different schema version", () => {
     const path = withBaseline((value) => {
       value.schemaVersion = 99;

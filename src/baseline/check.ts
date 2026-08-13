@@ -119,8 +119,18 @@ export function formatOutcome(baseline: Baseline, outcome: CheckOutcome): string
  * A baseline that reached the runner with a mistyped metric name would compare
  * against `undefined` and report a failure that is really a typo, so the field names
  * are checked against the mirror before anything runs.
+ *
+ * `segmentCount` bounds the preset index for the same reason. The core resolves the
+ * index with a catch-all arm, because a numeric boundary has to be total, so an index
+ * past the end arrives as the hostile preset and measures a link nobody asked for.
+ * That reads as a quality regression on a good build, which is the one verdict this
+ * runner must never invent.
  */
-export function parseBaseline(raw: string, knownMetrics: readonly string[]): Baseline {
+export function parseBaseline(
+  raw: string,
+  knownMetrics: readonly string[],
+  segmentCount: number,
+): Baseline {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -174,6 +184,11 @@ export function parseBaseline(raw: string, knownMetrics: readonly string[]): Bas
   }
   if (typeof value.segmentIndex !== "number" || !Number.isInteger(value.segmentIndex)) {
     throw new Error("the baseline needs a whole-number segmentIndex");
+  }
+  if (value.segmentIndex < 0 || value.segmentIndex >= segmentCount) {
+    throw new Error(
+      `the baseline names segment ${value.segmentIndex}, and this core has ${segmentCount} (0 to ${segmentCount - 1})`,
+    );
   }
 
   return {

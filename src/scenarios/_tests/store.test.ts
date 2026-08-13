@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BUILT_IN_SCENARIOS,
   EMPTY,
+  LIMITS,
   SCHEMA_VERSION,
   duplicateProfile,
   duplicateScenario,
@@ -16,7 +17,7 @@ import {
   type AuthoredScenario,
 } from "../store";
 import { PROFILES, type NetworkProfile } from "../../sweep/profiles";
-import { DEFAULT_SCENARIO } from "../../sim/types";
+import { DEFAULT_SCENARIO, SCENARIO_FIELDS } from "../../sim/types";
 
 /** A storage that behaves like the browser's, so the store is tested against one. */
 function memoryStorage(seed: Record<string, string> = {}): Storage {
@@ -147,6 +148,35 @@ describe("scenario validation", () => {
     );
     expect(problems.join(" ")).toContain("tick");
   });
+
+  /**
+   * These two have no editor control, since they only drive the fallback script, so
+   * nothing in the interface would have caught them being unvalidated. They still
+   * cross to the core in an imported spec, where they were clamped rather than
+   * refused.
+   */
+  it("rejects a negative moveFromTick", () => {
+    const problems = validateScenario(
+      scenario({ spec: { ...DEFAULT_SCENARIO, moveFromTick: -5000 } }),
+    );
+    expect(problems.join(" ")).toContain("moveFromTick");
+  });
+
+  it("rejects a stopAtTick past what the core reads", () => {
+    const problems = validateScenario(
+      scenario({ spec: { ...DEFAULT_SCENARIO, stopAtTick: 9e9 } }),
+    );
+    expect(problems.join(" ")).toContain("stopAtTick");
+  });
+
+  /**
+   * The failure above was a field in the spec with no entry in LIMITS, which reads as
+   * validated until someone checks. A new field added to the scenario has to be
+   * given a limit or fail here, rather than reaching the core to be clamped.
+   */
+  it("covers every scenario field the core reads", () => {
+    expect(Object.keys(LIMITS).sort()).toEqual([...SCENARIO_FIELDS].sort());
+  });
 });
 
 describe("profile validation", () => {
@@ -175,6 +205,28 @@ describe("profile validation", () => {
     if (!first) throw new Error("fixture has no segment");
     const problems = validateProfile({ ...p, segments: [{ ...first, lossPct: 120 }] });
     expect(problems.join(" ")).toContain("lossPct");
+  });
+
+  /**
+   * The core reads the round trip as a u32, so a fractional one truncates on the way
+   * across. The editor rounds every entry, but an imported file does not go through
+   * the editor, and a profile that quietly runs at 60 ms when the file said 60.7 is
+   * measuring conditions nobody authored.
+   */
+  it("rejects a fractional round trip", () => {
+    const p = profile();
+    const first = p.segments[0];
+    if (!first) throw new Error("fixture has no segment");
+    const problems = validateProfile({ ...p, segments: [{ ...first, rttMeanMs: 60.7 }] });
+    expect(problems.join(" ")).toContain("whole round trip");
+  });
+
+  it("rejects fractional jitter", () => {
+    const p = profile();
+    const first = p.segments[0];
+    if (!first) throw new Error("fixture has no segment");
+    const problems = validateProfile({ ...p, segments: [{ ...first, rttJitterMs: 15.9 }] });
+    expect(problems.join(" ")).toContain("whole jitter");
   });
 
   /**

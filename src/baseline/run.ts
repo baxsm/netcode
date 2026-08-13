@@ -16,6 +16,7 @@ import { createRequire } from "node:module";
 import {
   DEFAULT_CONFIG,
   METRIC_FIELDS,
+  SEGMENT_PRESETS,
   decodeMetrics,
   encodeConfig,
   encodeScenario,
@@ -59,7 +60,7 @@ function configFrom(pinned: Record<string, unknown>): NetcodeConfig {
 
 export function runBaseline(path: string): number {
   const core = loadCore();
-  const baseline = parseBaseline(readFileSync(path, "utf8"), METRIC_FIELDS);
+  const baseline = parseBaseline(readFileSync(path, "utf8"), METRIC_FIELDS, SEGMENT_PRESETS.length);
 
   const scenario = BUILT_IN_SCENARIOS.find((s) => s.id === baseline.scenarioId);
   if (!scenario) {

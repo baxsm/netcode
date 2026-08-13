@@ -66,9 +66,16 @@ const TOP = { x: 0, y: 0, width: 1280, height: 720 };
  * Only Chromium holds baselines. Font rasterisation differs between engines, so a
  * Firefox baseline would either need its own file or fail on antialiasing that has
  * nothing to do with the view.
+ *
+ * These run locally only. Playwright names a baseline after the platform that made it,
+ * and the same page rasterises differently on Windows and on Linux, so the committed
+ * files cannot be the reference for both. CI runs on Linux and would only ever compare
+ * against baselines it just wrote itself, which proves nothing. The suite is developed
+ * on Windows, so the baselines are Windows and the gate is local.
  */
 test.describe("baselines", () => {
   test.skip(({ browserName }) => browserName !== "chromium", "baselines are Chromium's");
+  test.skip(!!process.env.CI, "baselines are platform-specific, so they are a local gate");
 
   // captured against the viewport rather than the theatre element, so the page margins
   // are inside the frame. cropping to the element hides exactly the kind of edge

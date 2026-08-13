@@ -38,7 +38,7 @@ const settle = async (page: Page, tick: number) => {
     await expect(play).toHaveText("Play");
   }).toPass({ timeout: 30_000 });
 
-  await page.getByTestId("scrub").evaluate((el, v) => {
+  await page.getByTestId("scrub").locator('input[type="range"]').evaluate((el, v) => {
     const input = el as HTMLInputElement;
     const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set;
     setter?.call(input, String(v));
@@ -165,6 +165,21 @@ test.describe("baselines", () => {
     await expect(page.getByTestId("determinism-verdict")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("demo-list")).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('[data-testid$="-loading"]')).toHaveCount(0, { timeout: 60_000 });
+
+    /**
+     * Held until nothing on the page is still animating.
+     *
+     * Every section measures independently and the verdicts land at different moments,
+     * so "no loading state left" is necessary but not sufficient: a badge can still be
+     * part-way through its transition when the last one resolves. Under a parallel run
+     * that window is wide enough to capture, and it failed roughly one run in ten that
+     * way while passing every time on its own.
+     */
+    await page.waitForFunction(
+      () => document.getAnimations().every((a) => a.playState !== "running"),
+      undefined,
+      { timeout: 10_000 },
+    );
     await expect(page).toHaveScreenshot("verify.png", { fullPage: true });
   });
 });

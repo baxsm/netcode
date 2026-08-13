@@ -37,10 +37,20 @@ export interface Comparison {
 }
 
 interface Slot {
-  worker: Worker;
+  worker: Pick<Worker, "terminate">;
   api: Comlink.Remote<SimApi>;
   busy: boolean;
 }
+
+/**
+ * How a slot is made.
+ *
+ * Injectable so the pool's scheduling and crash recovery can be tested without a real
+ * worker. Killing one mid-sweep is the failure the retry path exists for, and there
+ * is no way to provoke it from outside: a thrown error has to come back through the
+ * proxy the pool is holding. The default builds the real thing.
+ */
+export type SpawnSlot = () => { worker: Pick<Worker, "terminate">; api: Comlink.Remote<SimApi> };
 
 /**
  * Workers to run, leaving one core for the thread that draws.
@@ -56,15 +66,23 @@ function defaultSize(): number {
   return Math.max(1, Math.min(cores - 1, 12));
 }
 
+const defaultSpawn: SpawnSlot = () => {
+  const worker = new Worker(new URL("./sim-worker.ts", import.meta.url), { type: "module" });
+  return { worker, api: Comlink.wrap<SimApi>(worker) };
+};
+
 export class SimPool {
   private slots: Slot[] = [];
   private waiting: Array<(slot: Slot) => void> = [];
 
-  constructor(private readonly size: number = defaultSize()) {}
+  constructor(
+    private readonly size: number = defaultSize(),
+    private readonly spawnSlot: SpawnSlot = defaultSpawn,
+  ) {}
 
   private spawn(): Slot {
-    const worker = new Worker(new URL("./sim-worker.ts", import.meta.url), { type: "module" });
-    return { worker, api: Comlink.wrap<SimApi>(worker), busy: false };
+    const { worker, api } = this.spawnSlot();
+    return { worker, api, busy: false };
   }
 
   private acquire(): Promise<Slot> {

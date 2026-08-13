@@ -1,4 +1,20 @@
 import { useCallback, useEffect, useState, type FC } from "react";
+import StatusNote from "./status-note";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { SimPool } from "../workers/pool";
 
 interface PeekersPanelProps {
@@ -53,59 +69,65 @@ const PeekersPanel: FC<PeekersPanelProps> = ({ pool }) => {
   }, [compute]);
 
   return (
-    <section className="panel" aria-labelledby="peekers-heading">
-      <div className="panel-head">
-        <h2 id="peekers-heading">Peeker&apos;s advantage</h2>
-      </div>
-      <p className="note">
-        Extra reaction time the peeking player gets, as round trip plus two frames of
-        server buffering and three of client buffering. Reproduced from Riot&apos;s
-        published VALORANT figures, which come from a different implementation and so
-        test this one from outside.
-      </p>
+    <Card aria-labelledby="peekers-heading">
+      <CardHeader>
+        <CardTitle id="peekers-heading">Peeker&apos;s advantage</CardTitle>
+        <CardDescription>
+          Extra reaction time the peeking player gets, as round trip plus two frames of
+          server buffering and three of client buffering. Reproduced from Riot&apos;s
+          published VALORANT figures, which come from a different implementation and so
+          test this one from outside.
+        </CardDescription>
+      </CardHeader>
 
-      {failed ? (
-        <p className="state error" role="alert">
-          Could not reach the core. Run the comparison again.
-        </p>
-      ) : values.length === 0 ? (
-        <p className="state">Calculating.</p>
-      ) : (
-        <div className="table-wrap">
-          <table data-testid="peekers">
-            <thead>
-              <tr>
-                <th scope="col">Condition</th>
-                <th scope="col">RTT</th>
-                <th scope="col">Tick</th>
-                <th scope="col">FPS</th>
-                <th scope="col">Computed</th>
-                <th scope="col">Published</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ROWS.map((row, i) => {
-                const computed = values[i] ?? 0;
-                return (
-                  <tr key={row.label}>
-                    <th scope="row">{row.label}</th>
-                    <td>{row.rttMs} ms</td>
-                    <td>{row.tickRate}</td>
-                    <td>{row.clientFps}</td>
-                    <td>
-                      <span className="value">{computed.toFixed(1)} ms</span>
-                    </td>
-                    <td>
-                      <span className="muted">~{row.published} ms</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+      <CardContent className="space-y-4">
+        {failed ? (
+          <StatusNote tone="error">
+            Could not reach the core. Run the comparison again.
+          </StatusNote>
+        ) : values.length === 0 ? (
+          <StatusNote tone="busy">Calculating.</StatusNote>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table data-testid="peekers">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Condition</TableHead>
+                  <TableHead className="text-right">RTT</TableHead>
+                  <TableHead className="text-right">Tick</TableHead>
+                  <TableHead className="text-right">FPS</TableHead>
+                  <TableHead className="text-right">Computed</TableHead>
+                  <TableHead className="text-right">Published</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {ROWS.map((row, i) => {
+                  const computed = values[i] ?? 0;
+                  return (
+                    <TableRow key={row.label}>
+                      <TableHead scope="row" className="font-medium">
+                        {row.label}
+                      </TableHead>
+                      <TableCell className="tabular text-right">{row.rttMs} ms</TableCell>
+                      <TableCell className="tabular text-right">{row.tickRate}</TableCell>
+                      <TableCell className="tabular text-right">{row.clientFps}</TableCell>
+                      {/* the computed figure is the claim, so it reads loudest and the
+                          published one sits beside it as the reference */}
+                      <TableCell className="tabular text-right text-sm font-medium">
+                        {computed.toFixed(1)} ms
+                      </TableCell>
+                      <TableCell className="tabular text-right text-muted-foreground">
+                        ~{row.published} ms
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 };
 

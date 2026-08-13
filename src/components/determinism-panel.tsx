@@ -1,6 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FC } from "react";
+import { RotateCcw } from "lucide-react";
+import StatusNote from "./status-note";
 import Verdict from "./verdict";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { SimPool } from "../workers/pool";
 import { BUILT_IN_SCENARIOS } from "../scenarios/store";
 import { DEFAULT_CONFIG } from "../sim/types";
@@ -96,80 +115,95 @@ const DeterminismPanel: FC<DeterminismPanelProps> = ({ pool, coreVersion }) => {
   const held = results.length > 0 && stable && distinct;
 
   return (
-    <section className="panel" aria-labelledby="determinism-heading">
-      <div className="panel-head">
-        <h2 id="determinism-heading">Determinism</h2>
+    <Card aria-labelledby="determinism-heading">
+      <CardHeader>
+        <CardTitle id="determinism-heading">Determinism</CardTitle>
+        <CardDescription>
+          The same seed run {REPEATS} times must produce one hash, and two seeds must
+          produce different ones. The first property is what makes a result
+          reproducible; the second is what stops a hash that ignores its input from
+          passing as stable. Agreement across engines is checked in CI, against Chromium
+          and Firefox.
+        </CardDescription>
         {results.length > 0 ? (
-          <Verdict passed={held} testId="determinism-verdict">
-            {held ? "Stable and seed dependent" : "Hashes disagree"}
-          </Verdict>
+          <CardAction>
+            <Verdict passed={held} testId="determinism-verdict" size="lg">
+              {held ? "Stable and seed dependent" : "Hashes disagree"}
+            </Verdict>
+          </CardAction>
         ) : null}
-      </div>
+      </CardHeader>
 
-      <p className="note">
-        The same seed run {REPEATS} times must produce one hash, and two seeds must
-        produce different ones. The first property is what makes a result reproducible;
-        the second is what stops a hash that ignores its input from passing as stable.
-        Agreement across engines is checked in CI, against Chromium and Firefox.
-      </p>
+      <CardContent className="space-y-4">
+        {error ? (
+          <StatusNote tone="error" className="justify-between gap-4">
+            <span>{error}</span>
+            <Button variant="outline" size="sm" onClick={() => void check()}>
+              <RotateCcw data-icon="inline-start" />
+              Try again
+            </Button>
+          </StatusNote>
+        ) : null}
 
-      {error ? (
-        <p className="state error" role="alert">
-          {error}{" "}
-          <button type="button" className="ghost" onClick={() => void check()}>
-            Try again
-          </button>
+        {running && results.length === 0 ? (
+          <StatusNote tone="busy" data-testid="determinism-loading">
+            Running {REPEATS * SEEDS.length} simulations.
+          </StatusNote>
+        ) : null}
+
+        {results.length > 0 ? (
+          <div className="overflow-x-auto">
+            <Table data-testid="determinism-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Seed</TableHead>
+                  <TableHead>State hash</TableHead>
+                  <TableHead className="text-right">Runs</TableHead>
+                  <TableHead className="text-right">Result</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {results.map((result) => {
+                  const unique = new Set(result.hashes).size;
+                  return (
+                    <TableRow key={String(result.seed)} data-testid="determinism-row">
+                      <TableHead scope="row" className="tabular font-medium">
+                        {String(result.seed)}
+                      </TableHead>
+                      <TableCell>
+                        <code className="rounded border border-border bg-raised px-1.5 py-0.5 font-mono text-[0.6875rem] text-foreground">
+                          {result.hashes[0]}
+                        </code>
+                      </TableCell>
+                      <TableCell className="tabular text-right text-muted-foreground">
+                        {result.hashes.length}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Verdict passed={unique === 1}>
+                          {unique === 1 ? "Identical" : `${unique} different hashes`}
+                        </Verdict>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        ) : null}
+
+        {/* a hash is only meaningful next to the core that produced it, so the build
+            fingerprint sits with the result rather than only in the top bar */}
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Produced by core{" "}
+          <code className="rounded border border-border bg-raised px-1.5 py-0.5 font-mono text-[0.6875rem] text-foreground">
+            {coreVersion || "unknown"}
+          </code>
+          . Relaxed SIMD is reported in that string because its instructions may return
+          different results for the same inputs, which would break every guarantee on
+          this page.
         </p>
-      ) : null}
-
-      {running && results.length === 0 ? (
-        <p className="state" data-testid="determinism-loading">
-          Running {REPEATS * SEEDS.length} simulations.
-        </p>
-      ) : null}
-
-      {results.length > 0 ? (
-        <div className="table-wrap">
-          <table data-testid="determinism-table">
-            <thead>
-              <tr>
-                <th scope="col">Seed</th>
-                <th scope="col">State hash</th>
-                <th scope="col">Runs</th>
-                <th scope="col">Result</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((result) => {
-                const unique = new Set(result.hashes).size;
-                return (
-                  <tr key={String(result.seed)} data-testid="determinism-row">
-                    <th scope="row">{String(result.seed)}</th>
-                    <td>
-                      <code>{result.hashes[0]}</code>
-                    </td>
-                    <td>{result.hashes.length}</td>
-                    <td>
-                      <Verdict passed={unique === 1}>
-                        {unique === 1 ? "Identical" : `${unique} different hashes`}
-                      </Verdict>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-
-      {/* a hash is only meaningful next to the core that produced it, so the build
-          fingerprint sits with the result rather than only in the top bar */}
-      <p className="note">
-        Produced by core <code>{coreVersion || "unknown"}</code>. Relaxed SIMD is
-        reported in that string because its instructions may return different results
-        for the same inputs, which would break every guarantee on this page.
-      </p>
-    </section>
+      </CardContent>
+    </Card>
   );
 };
 

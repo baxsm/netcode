@@ -1,6 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FC } from "react";
-import Icon from "../components/icon";
+import {
+  Copy,
+  Download,
+  ExternalLink,
+  Lock,
+  Trash2,
+  TriangleAlert,
+  Upload,
+} from "lucide-react";
+import StatusNote from "../components/status-note";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import InputScriptEditor from "../components/input-script-editor";
 import ProfileEditor from "../components/profile-editor";
 import ScenarioEditor from "../components/scenario-editor";
@@ -147,65 +178,95 @@ const ScenariosPage: FC = () => {
   }, []);
 
   return (
-    <>
-      <header>
-        <h1>Scenarios</h1>
-        <p>
+    <div className="space-y-6">
+      <header className="max-w-3xl space-y-1.5">
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">Scenarios</h1>
+        <p className="text-sm text-muted-foreground">
           What gets simulated, and against which players. A scenario is one controllable
           body and the inputs it receives, because that is what the core integrates.
           Built-ins are read-only, so duplicate one to change it.
         </p>
       </header>
 
-      <section className="controls">
-        <div className="field inline">
-          <label htmlFor="scenario-pick">Scenario</label>
-          <select
-            id="scenario-pick"
-            value={scenario?.id ?? ""}
-            onChange={(e) => setScenarioId(e.target.value)}
-          >
-            <optgroup label="Built in">
-              {BUILT_IN_SCENARIOS.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </optgroup>
-            {authored.scenarios.length > 0 ? (
-              <optgroup label="Yours">
-                {authored.scenarios.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </optgroup>
-            ) : null}
-          </select>
-        </div>
-
-        {/* the primary action on this page: a built-in cannot be edited, so duplicating
-            one is how any authoring starts, and the copy above says so */}
-        <button type="button" onClick={duplicate} data-testid="duplicate">
-          <Icon name="copy" />
-          Duplicate
-        </button>
-        <button
-          type="button"
-          className="ghost"
-          data-testid="open-in-replay"
-          disabled={scenarioProblems.length > 0}
-          onClick={() => scenario && navigate("/", { scenario: scenario.id })}
+      <div className="flex flex-wrap items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2.5">
+        <Label htmlFor="scenario-pick" className="text-xs text-muted-foreground">
+          Scenario
+        </Label>
+        <Select
+          value={scenario?.id ?? ""}
+          onValueChange={(v) => {
+            if (typeof v === "string") setScenarioId(v);
+          }}
         >
-          <Icon name="external" />
-          Open in replay
-        </button>
-        {scenarioReadOnly ? null : (
-          <button type="button" className="quiet" onClick={removeScenario} data-testid="delete">
-            Delete
-          </button>
-        )}
-      </section>
+          <SelectTrigger id="scenario-pick" className="w-60">
+            <SelectValue>{() => scenario?.name ?? ""}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectLabel>Built in</SelectLabel>
+              {BUILT_IN_SCENARIOS.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+            {authored.scenarios.length > 0 ? (
+              <SelectGroup>
+                <SelectLabel>Yours</SelectLabel>
+                {authored.scenarios.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ) : null}
+          </SelectContent>
+        </Select>
+
+        {scenarioReadOnly ? (
+          <Badge variant="outline" className="font-normal text-muted-foreground">
+            <Lock className="size-3" aria-hidden />
+            Read only
+          </Badge>
+        ) : null}
+
+        <div className="ml-auto flex items-center gap-1.5">
+          {/* a built-in cannot be edited, so duplicating one is how any authoring
+              starts. it is the primary here, and the only primary on this row */}
+          <Button onClick={duplicate} size="sm" data-testid="duplicate">
+            <Copy data-icon="inline-start" />
+            Duplicate
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="open-in-replay"
+            disabled={scenarioProblems.length > 0}
+            onClick={() => scenario && navigate("/", { scenario: scenario.id })}
+          >
+            <ExternalLink data-icon="inline-start" />
+            Open in replay
+          </Button>
+          {scenarioReadOnly ? null : (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="destructive"
+                    size="icon-sm"
+                    onClick={removeScenario}
+                    data-testid="delete"
+                    aria-label="Delete this scenario"
+                  >
+                    <Trash2 />
+                  </Button>
+                }
+              />
+              <TooltipContent>Delete this scenario</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      </div>
 
       {scenario ? (
         <>
@@ -225,48 +286,82 @@ const ScenariosPage: FC = () => {
         </>
       ) : null}
 
-      <section className="controls">
-        <div className="field inline">
-          <label htmlFor="profile-pick">Profile</label>
-          <select
-            id="profile-pick"
-            value={profile?.id ?? ""}
-            onChange={(e) => setProfileId(e.target.value)}
-          >
-            <optgroup label="Built in">
-              {PROFILES.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </optgroup>
-            {authored.profiles.length > 0 ? (
-              <optgroup label="Yours">
-                {authored.profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </optgroup>
-            ) : null}
-          </select>
-        </div>
+      <Separator />
 
-        <button type="button" onClick={duplicateCurrentProfile} data-testid="duplicate-profile">
-          <Icon name="copy" />
-          Duplicate
-        </button>
-        {profileReadOnly ? null : (
-          <button
-            type="button"
-            className="quiet"
-            onClick={removeProfile}
-            data-testid="delete-profile"
+      <div className="flex flex-wrap items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2.5">
+        <Label htmlFor="profile-pick" className="text-xs text-muted-foreground">
+          Profile
+        </Label>
+        <Select
+          value={profile?.id ?? ""}
+          onValueChange={(v) => {
+            if (typeof v === "string") setProfileId(v);
+          }}
+        >
+          <SelectTrigger id="profile-pick" className="w-60">
+            <SelectValue>{() => profile?.name ?? ""}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectLabel>Built in</SelectLabel>
+              {PROFILES.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+            {authored.profiles.length > 0 ? (
+              <SelectGroup>
+                <SelectLabel>Yours</SelectLabel>
+                {authored.profiles.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ) : null}
+          </SelectContent>
+        </Select>
+
+        {profileReadOnly ? (
+          <Badge variant="outline" className="font-normal text-muted-foreground">
+            <Lock className="size-3" aria-hidden />
+            Read only
+          </Badge>
+        ) : null}
+
+        {/* secondary next to the scenario row's primary: duplicating a profile is a
+            supporting action on this page, not a second headline one */}
+        <div className="ml-auto flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={duplicateCurrentProfile}
+            data-testid="duplicate-profile"
           >
-            Delete
-          </button>
-        )}
-      </section>
+            <Copy data-icon="inline-start" />
+            Duplicate
+          </Button>
+          {profileReadOnly ? null : (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="destructive"
+                    size="icon-sm"
+                    onClick={removeProfile}
+                    data-testid="delete-profile"
+                    aria-label="Delete this profile"
+                  >
+                    <Trash2 />
+                  </Button>
+                }
+              />
+              <TooltipContent>Delete this profile</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      </div>
 
       {profile ? (
         <ProfileEditor
@@ -277,80 +372,105 @@ const ScenariosPage: FC = () => {
         />
       ) : null}
 
-      <section className="panel" aria-labelledby="transfer-heading">
-        <div className="panel-head">
-          <h2 id="transfer-heading">Import and export</h2>
-          <div className="panel-actions">
-            <button
-              type="button"
-              className="ghost"
-              data-testid="export"
-              onClick={() =>
-                downloadJson("netcode-scenarios.json", JSON.stringify(toExport(authored), null, 2))
-              }
+      <Card aria-labelledby="transfer-heading">
+        <CardHeader>
+          <CardTitle id="transfer-heading">Import and export</CardTitle>
+          <CardDescription>
+            Authored scenarios live in this browser. Export them to keep them anywhere
+            else.
+          </CardDescription>
+          <CardAction>
+            <div className="flex gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="export"
+                onClick={() =>
+                  downloadJson(
+                    "netcode-scenarios.json",
+                    JSON.stringify(toExport(authored), null, 2),
+                  )
+                }
+              >
+                <Download data-icon="inline-start" />
+                Export yours
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="import"
+                onClick={() => fileInput.current?.click()}
+              >
+                <Upload data-icon="inline-start" />
+                Import
+              </Button>
+            </div>
+          </CardAction>
+        </CardHeader>
+
+        <CardContent className="space-y-3">
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/json,.json"
+            className="sr-only"
+            aria-label="Import scenarios and profiles"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void readFile(file);
+              // cleared so importing the same file twice still fires a change
+              e.target.value = "";
+            }}
+          />
+
+          {authored.scenarios.length + authored.profiles.length === 0 ? (
+            <p className="text-sm text-muted-foreground" data-testid="nothing-authored">
+              Nothing authored yet. Duplicate a built-in to start, then export it to
+              keep it outside this browser.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground" data-testid="authored-count">
+              <span className="tabular text-foreground">
+                {authored.scenarios.length}
+              </span>{" "}
+              scenarios and{" "}
+              <span className="tabular text-foreground">
+                {authored.profiles.length}
+              </span>{" "}
+              profiles saved in this browser.
+            </p>
+          )}
+
+          {imported ? (
+            <StatusNote data-testid="import-result">{imported}</StatusNote>
+          ) : null}
+
+          {importProblems.length > 0 ? (
+            <ul
+              className="space-y-1 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2"
+              data-testid="import-problems"
+              role="alert"
             >
-              <Icon name="download" />
-              Export yours
-            </button>
-            <button
-              type="button"
-              className="ghost"
-              data-testid="import"
-              onClick={() => fileInput.current?.click()}
-            >
-              <Icon name="upload" />
-              Import
-            </button>
-          </div>
-        </div>
+              {importProblems.map((problem) => (
+                <li
+                  key={problem}
+                  className="flex items-start gap-2 text-sm text-destructive"
+                >
+                  <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  {problem}
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
-        <input
-          ref={fileInput}
-          type="file"
-          accept="application/json,.json"
-          className="visually-hidden"
-          aria-label="Import scenarios and profiles"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void readFile(file);
-            // cleared so importing the same file twice still fires a change
-            e.target.value = "";
-          }}
-        />
-
-        {authored.scenarios.length + authored.profiles.length === 0 ? (
-          <p className="state" data-testid="nothing-authored">
-            Nothing authored yet. Duplicate a built-in to start, then export it to keep it
-            outside this browser.
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Exports carry a schema version. A file written by a different version is
+            rejected with its reason rather than loaded with fields this build would
+            guess at.
           </p>
-        ) : (
-          <p className="state" data-testid="authored-count">
-            {authored.scenarios.length} scenarios and {authored.profiles.length} profiles
-            saved in this browser.
-          </p>
-        )}
-
-        {imported ? (
-          <p className="state" data-testid="import-result" role="status">
-            {imported}
-          </p>
-        ) : null}
-
-        {importProblems.length > 0 ? (
-          <ul className="problems" data-testid="import-problems" role="alert">
-            {importProblems.map((problem) => (
-              <li key={problem}>{problem}</li>
-            ))}
-          </ul>
-        ) : null}
-
-        <p className="note">
-          Exports carry a schema version. A file written by a different version is
-          rejected with its reason rather than loaded with fields this build would guess
-          at.
-        </p>
-      </section>
-    </>
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

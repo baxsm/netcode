@@ -65,6 +65,18 @@ describe("entry animations", () => {
   it("leaves the simulation canvas out of every animation rule", () => {
     const reduced = /@media\s*\(prefers-reduced-motion[^)]*\)\s*\{/.test(CSS);
     expect(reduced).toBe(true);
-    expect(/\.view canvas[^{]*\{[^}]*animation:/.test(CSS)).toBe(false);
+
+    /**
+     * The reduced-motion block must exempt the canvas by name.
+     *
+     * Reducing motion stops the chrome, never the simulation, because the simulation
+     * is the content rather than decoration around it. The rule is written as
+     * `*:not(.sim-canvas)` so a blanket `*` can never be reintroduced without this
+     * failing.
+     */
+    const block = /@media\s*\(prefers-reduced-motion[^)]*\)\s*\{([\s\S]*?)\n\}/.exec(CSS);
+    expect(block).not.toBeNull();
+    expect(block?.[1]).toContain(":not(.sim-canvas)");
+    expect(/^\s*\*\s*\{/m.test(block?.[1] ?? "")).toBe(false);
   });
 });

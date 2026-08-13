@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { choose } from "./controls";
 
 /**
  * Drives the authoring surface end to end: duplicate a built-in, edit it, and check
@@ -59,7 +60,7 @@ test("editing the script changes what the run receives", async ({ page }) => {
   await expect(rows).toHaveCount(2);
 
   // a fire makes the rewind limit act, which is what the strip keys off
-  await page.getByLabel("Input 2 action").selectOption("fire");
+  await choose(page.getByLabel("Input 2 action"), "Fire");
   await page.getByLabel("Input 2 tick").fill("120");
 
   await page.getByTestId("delete").click();
@@ -161,12 +162,16 @@ test("an authored scenario reaches the replay and the sweep", async ({ page }) =
 
   await page.goto("/#/tune");
   await expect(page.getByTestId("run-sweep")).toBeVisible({ timeout: 30_000 });
-  await page.getByLabel("Scenario").selectOption({ label: "Reaches the run" });
+  await choose(page.getByLabel("Scenario"), "Reaches the run");
   // the scenario carries its own length, so the note follows it rather than a constant
-  await expect(page.getByLabel("Scenario").locator("xpath=../span")).toContainText("220 ticks");
+  // the note lives with the field rather than as a bare sibling span now, so this
+  // asserts on the field group. what matters is that the length follows the scenario
+  await expect(
+    page.locator("div", { has: page.getByLabel("Scenario") }).first(),
+  ).toContainText("220 ticks");
 
   await page.goto("/#/");
   await expect(page.getByTestId("theatre")).toBeVisible({ timeout: 30_000 });
-  await page.getByLabel("Scenario").selectOption({ label: "Reaches the run" });
+  await choose(page.getByLabel("Scenario"), "Reaches the run");
   await expect(page.getByTestId("tick-readout")).toContainText("of 219", { timeout: 30_000 });
 });

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Cpu } from "lucide-react";
 import { SimPool } from "./workers/pool";
 import TooNarrow from "./components/too-narrow";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import ReplayPage from "./pages/replay-page";
 import ScenariosPage from "./pages/scenarios-page";
 import TunePage from "./pages/tune-page";
@@ -74,33 +82,105 @@ export default function App() {
   if (!wideEnough) return <TooNarrow />;
 
   return (
-    <>
-      <nav className="top-bar" aria-label="Sections">
-        <div className="top-bar-inner">
-          <span className="wordmark">netcode</span>
-          <ul>
-            {ROUTES.map((r) => (
-              <li key={r}>
-                <a href={hrefFor(r)} aria-current={route === r ? "page" : undefined}>
-                  {ROUTE_LABELS[r]}
-                </a>
-              </li>
-            ))}
-          </ul>
+    <TooltipProvider>
+    <div className="flex min-h-screen flex-col">
+      <header className="sticky top-0 z-30 border-b border-border/80 bg-background/85 backdrop-blur-md">
+        <div className="mx-auto flex h-14 w-full max-w-[110rem] items-center gap-6 px-6">
+          <span className="font-heading text-[0.95rem] font-semibold tracking-tight">
+            netcode
+          </span>
+
+          <nav aria-label="Sections">
+            <ul className="flex items-center gap-1">
+              {ROUTES.map((r) => {
+                const current = route === r;
+                return (
+                  <li key={r}>
+                    <a
+                      href={hrefFor(r)}
+                      aria-current={current ? "page" : undefined}
+                      className={cn(
+                        "relative flex h-8 items-center rounded-md px-3 text-[0.8125rem] font-medium",
+                        "transition-colors outline-none",
+                        "focus-visible:ring-3 focus-visible:ring-ring/50",
+                        current
+                          ? "text-foreground"
+                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                      )}
+                    >
+                      {ROUTE_LABELS[r]}
+                      {/* the active mark is its own element rather than a background,
+                          so the label does not shift weight between states */}
+                      {current ? (
+                        <span className="absolute inset-x-2 -bottom-[13px] h-0.5 rounded-full bg-primary" />
+                      ) : null}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
           {version ? (
             // the build flags travel with every result, because a number is only
             // meaningful next to the build that produced it
-            <code data-testid="version">core {version}</code>
+            <CoreFingerprint version={version} />
           ) : null}
         </div>
-      </nav>
+      </header>
 
-      <main>
+      <main className="mx-auto w-full max-w-[110rem] flex-1 px-6 py-8">
         {route === "/" ? <ReplayPage pool={poolFor} /> : null}
         {route === "/tune" ? <TunePage pool={poolFor} coreVersion={version} /> : null}
         {route === "/scenarios" ? <ScenariosPage /> : null}
         {route === "/verify" ? <VerifyPage pool={poolFor} coreVersion={version} /> : null}
       </main>
-    </>
+    </div>
+    </TooltipProvider>
+  );
+}
+
+/**
+ * The core build the numbers on screen came out of.
+ *
+ * Split into the version and its flags because they answer different questions: the
+ * version says which build, the flags say whether that build can be trusted to
+ * reproduce, and `relaxed_simd` in particular would invalidate every guarantee the
+ * verify page makes.
+ */
+function CoreFingerprint({ version }: { version: string }) {
+  const [name, ...flags] = version.split(" ");
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          /**
+           * The flags stay in the DOM rather than living only in the tooltip.
+           *
+           * `relaxed_simd` in particular would invalidate every guarantee the verify
+           * page makes, so it has to be readable without hovering. It is dimmed and
+           * hidden on a narrow bar, never removed.
+           */
+          <div
+            className="ml-auto flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1"
+            data-testid="version"
+          >
+            <Cpu className="size-3.5 text-muted-foreground" aria-hidden />
+            <span className="font-mono text-xs text-muted-foreground">
+              core <span className="text-foreground">{name}</span>
+            </span>
+            <span className="hidden font-mono text-xs text-muted-foreground/70 xl:inline">
+              {flags.join(" ")}
+            </span>
+          </div>
+        }
+      />
+      <TooltipContent>
+        <p className="font-mono text-xs">{flags.join(" ") || "no build flags"}</p>
+        <p className="mt-1 max-w-56 text-xs text-muted-foreground">
+          Every result on this page came out of this build.
+        </p>
+      </TooltipContent>
+    </Tooltip>
   );
 }

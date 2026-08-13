@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FC } from "react";
+import { RotateCw, TriangleAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import DeterminismPanel from "../components/determinism-panel";
 import FailureDemos from "../components/failure-demos";
 import OracleTable from "../components/oracle-table";
@@ -61,10 +63,10 @@ const VerifyPage: FC<VerifyPageProps> = ({ pool, coreVersion }) => {
   }, [measure]);
 
   return (
-    <>
-      <header>
-        <h1>Verify</h1>
-        <p>
+    <div className="space-y-6">
+      <header className="max-w-3xl space-y-1.5">
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">Verify</h1>
+        <p className="text-sm text-muted-foreground">
           Three checks, run in this browser when the page loads. The reproduction tests
           the model against figures published by another team, the determinism panel
           tests it against itself, and the failure demos show that the effects the tool
@@ -73,18 +75,29 @@ const VerifyPage: FC<VerifyPageProps> = ({ pool, coreVersion }) => {
       </header>
 
       {status === "failed" ? (
-        <p className="state error" data-testid="verify-error" role="alert">
-          {error}{" "}
-          <button type="button" className="ghost" onClick={() => void measure()}>
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2"
+          data-testid="verify-error"
+          role="alert"
+        >
+          <TriangleAlert className="size-4 shrink-0 text-destructive" aria-hidden />
+          <span className="text-sm text-destructive">{error}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={() => void measure()}
+          >
+            <RotateCw data-icon="inline-start" />
             Try again
-          </button>
-        </p>
+          </Button>
+        </div>
       ) : null}
 
       <OracleTable rows={rows} running={status === "running"} />
       <DeterminismPanel pool={pool} coreVersion={coreVersion} />
       <FailureDemos pool={pool} />
-    </>
+    </div>
   );
 };
 

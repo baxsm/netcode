@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FC } from "react";
+import { ChartScatter } from "lucide-react";
 import ParetoChart from "../components/pareto-chart";
+import StatusNote from "../components/status-note";
 import SweepControls from "../components/sweep-controls";
 import SweepResult from "../components/sweep-result";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { DATA } from "../palette";
 import type { SimPool } from "../workers/pool";
 import { useNavigate } from "../router";
 import { useScenarios } from "../scenarios/use-scenarios";
@@ -149,10 +160,10 @@ const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
   }, [navigate, point, chosen.id]);
 
   return (
-    <>
-      <header>
-        <h1>Tune</h1>
-        <p>
+    <div className="space-y-6">
+      <header className="max-w-3xl space-y-1.5">
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">Tune</h1>
+        <p className="text-sm text-muted-foreground">
           Every configuration on the grid, run against every seed and every segment of
           the population, then aggregated by how many players each segment represents.
           Points where responsiveness cannot improve without costing smoothness are the
@@ -178,32 +189,64 @@ const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
       />
 
       {running ? (
-        <p className="state" data-testid="sweep-progress" role="status">
-          {progress.completed} of {progress.total} configurations, {elapsed.toFixed(1)} s
-          elapsed
-        </p>
+        <StatusNote tone="busy" data-testid="sweep-progress">
+          <span className="tabular">
+            {progress.completed} of {progress.total}
+          </span>{" "}
+          configurations,{" "}
+          <span className="tabular">{elapsed.toFixed(1)} s</span> elapsed
+        </StatusNote>
       ) : null}
 
       {status === "failed" ? (
-        <p className="state error" data-testid="sweep-error" role="alert">
+        <StatusNote tone="error" data-testid="sweep-error">
           {error}
-        </p>
+        </StatusNote>
       ) : null}
 
-      {status === "idle" ? (
-        <p className="state" data-testid="sweep-empty">
-          No sweep yet. Pick a population and run one.
-        </p>
+      {/**
+       * Shown whenever there is no front to look at and nothing is running.
+       *
+       * Previously this was gated on `status === "idle"`, so a failed sweep rendered
+       * the error and nothing else: no chart, no result, and no hint that running
+       * again was the next move. The empty state was suppressed exactly when it was
+       * most useful.
+       */}
+      {!running && points.length === 0 ? (
+        <div
+          className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-6 py-12 text-center"
+          data-testid="sweep-empty"
+        >
+          <ChartScatter className="size-7 text-muted-foreground/60" aria-hidden />
+          <p className="text-sm font-medium">
+            {status === "failed" ? "That sweep did not finish" : "No sweep yet"}
+          </p>
+          <p className="max-w-sm text-xs text-muted-foreground">
+            {status === "failed"
+              ? "Nothing was measured, so there is no front to show. Run it again."
+              : "Pick a scenario and a player population above, then run the search. The front appears here."}
+          </p>
+        </div>
       ) : null}
 
       {points.length > 0 ? (
-        <section className="panel" aria-labelledby="front-heading">
-          <div className="panel-head">
-            <h2 id="front-heading">The tradeoff</h2>
-            <span className="muted" data-testid="front-size">
-              {front.length} of {points.length} on the front, {elapsed.toFixed(1)} s
-            </span>
-          </div>
+        <Card aria-labelledby="front-heading">
+          <CardHeader>
+            <CardTitle id="front-heading">The tradeoff</CardTitle>
+            <CardDescription>
+              Each point is one configuration. The front is where responsiveness cannot
+              improve without costing smoothness.
+            </CardDescription>
+            <CardAction>
+              <span
+                className="tabular text-xs text-muted-foreground"
+                data-testid="front-size"
+              >
+                {front.length} of {points.length} on the front, {elapsed.toFixed(1)} s
+              </span>
+            </CardAction>
+          </CardHeader>
+          <CardContent>
 
           <ParetoChart
             points={points}
@@ -214,31 +257,33 @@ const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
             onSelect={select}
           />
 
-          <ul className="legend">
-            <li>
-              <span className="swatch" style={{ background: "#58a6ff" }} />
-              On the front
-            </li>
-            <li>
-              <span className="swatch" style={{ background: "#3d4653" }} />
-              Dominated
-            </li>
-            <li>
-              <span className="swatch" style={{ background: "#e6edf3" }} />
-              Selected
-            </li>
-            <li>
-              <span className="swatch" style={{ background: "#f0883e" }} />
-              Compared
-            </li>
+          {/* read from the shared palette rather than repeating the chart's hex, which
+              is how the legend previously drifted from what the chart drew */}
+          <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-muted-foreground">
+            {[
+              [DATA.front, "On the front"],
+              [DATA.dominated, "Dominated"],
+              [DATA.selected, "Selected"],
+              [DATA.compared, "Compared"],
+            ].map(([colour, label]) => (
+              <li key={label} className="flex items-center gap-1.5">
+                <span
+                  className="size-2.5 rounded-full"
+                  style={{ background: colour }}
+                  aria-hidden
+                />
+                {label}
+              </li>
+            ))}
           </ul>
 
-          <p className="note">
-            Differences smaller than {RESOLUTION_FLOOR.toFixed(3)} on either score sit
-            inside the run-to-run spread at {seedCount} seeds, so points that close
-            together are not meaningfully apart.
-          </p>
-        </section>
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+              Differences smaller than {RESOLUTION_FLOOR.toFixed(3)} on either score sit
+              inside the run-to-run spread at {seedCount} seeds, so points that close
+              together are not meaningfully apart.
+            </p>
+          </CardContent>
+        </Card>
       ) : null}
 
       {point ? (
@@ -272,7 +317,7 @@ const TunePage: FC<TunePageProps> = ({ pool, coreVersion }) => {
           onClearComparison={() => setCompared(null)}
         />
       ) : null}
-    </>
+    </div>
   );
 };
 

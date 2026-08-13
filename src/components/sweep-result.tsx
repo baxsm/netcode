@@ -1,5 +1,24 @@
 import type { FC } from "react";
-import Icon from "./icon";
+import { Check, Download, ExternalLink, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import type { ScenarioSpec, SweepPoint } from "../sim/types";
 import { configRows, metricRows } from "../sweep/metrics-view";
 import { differences } from "../sweep/pareto";
@@ -43,118 +62,153 @@ const SweepResult: FC<SweepResultProps> = ({
   const configDiff = comparedTo ? differences(point, comparedTo, configRows) : [];
 
   return (
-    <section className="panel" aria-labelledby="result-heading" data-testid="sweep-result">
-      <div className="panel-head">
-        <h2 id="result-heading">
-          {onFront ? "Selected configuration" : "Selected (dominated)"}
-        </h2>
-        <div className="panel-actions">
-          <button type="button" className="ghost" onClick={onOpenReplay}>
-            <Icon name="external" />
-            Open in replay
-          </button>
-          <button type="button" className="ghost" onClick={onExportConfig}>
-            <Icon name="download" />
-            Export config
-          </button>
-          <button type="button" className="ghost" onClick={onExportReport}>
-            <Icon name="download" />
-            Export report
-          </button>
-        </div>
-      </div>
-
-      {onFront ? null : (
-        <p className="note">
-          This point is beaten on both axes by at least one other. It is shown so the
-          shape of the tradeoff reads, but a configuration on the front is strictly
-          better.
-        </p>
-      )}
-
-      <div className="result-grid">
-        <div>
-          <h3 className="sub-heading">
-            What a player gets
-            {comparedTo ? <span className="muted"> vs compared</span> : null}
-          </h3>
-          <dl className="metric-list" data-testid="result-metrics">
-            {rows.map((row, i) => {
-              const other = otherRows?.[i];
-              const delta = other ? deltaLabel(row.value, other.value) : null;
-              return (
-                <div key={row.label}>
-                  <dt>{row.label}</dt>
-                  <dd>
-                    {row.value}
-                    {delta ? (
-                      <span className={`change ${delta.tone}`}>{delta.text}</span>
-                    ) : null}
-                  </dd>
-                  <span className="metric-note">{row.note}</span>
-                </div>
-              );
-            })}
-          </dl>
-        </div>
-
-        <div>
-          <h3 className="sub-heading">The configuration</h3>
-          <dl className="config-list" data-testid="result-config">
-            {configRows(point.config).map((row) => (
-              <div key={row.label}>
-                <dt>{row.label}</dt>
-                <dd>{row.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      </div>
-
-      {comparedTo ? (
-        <div className="diff" data-testid="config-diff">
-          <div className="panel-head">
-            <h3 className="sub-heading">What differs between the two</h3>
-            <button type="button" className="quiet" onClick={onClearComparison}>
-              <Icon name="cross" />
-              Clear comparison
-            </button>
-          </div>
-          {configDiff.length === 0 ? (
-            <p className="note">
-              The two configurations are identical. Their results differ only by the
-              seeds they ran on.
-            </p>
+    <Card aria-labelledby="result-heading" data-testid="sweep-result">
+      <CardHeader>
+        <CardTitle id="result-heading" className="flex items-center gap-2">
+          Selected configuration
+          {onFront ? (
+            <Badge variant="secondary" className="gap-1 font-normal">
+              <Check className="size-3 text-pass" aria-hidden />
+              On the front
+            </Badge>
           ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Setting</th>
-                    <th scope="col">Selected</th>
-                    <th scope="col">Compared</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {configDiff.map((row) => (
-                    <tr key={row.label}>
-                      <th scope="row">{row.label}</th>
-                      <td>{row.left}</td>
-                      <td>{row.right}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Badge variant="outline" className="font-normal text-muted-foreground">
+              Dominated
+            </Badge>
           )}
-          <p className="note">
-            Score gaps narrower than {RESOLUTION_FLOOR.toFixed(3)} are inside the
-            run-to-run noise at this seed count, so a difference smaller than that is
-            not a real one.
-          </p>
+        </CardTitle>
+        <CardDescription>
+          {onFront
+            ? "Nothing in the search is better on both axes at once."
+            : "Beaten on both axes by at least one other point. Shown so the shape of the tradeoff reads, but a point on the front is strictly better."}
+        </CardDescription>
+        <CardAction>
+          <div className="flex flex-wrap gap-1.5">
+            <Button variant="outline" size="sm" onClick={onOpenReplay}>
+              <ExternalLink data-icon="inline-start" />
+              Open in replay
+            </Button>
+            <Button variant="outline" size="sm" onClick={onExportConfig}>
+              <Download data-icon="inline-start" />
+              Export config
+            </Button>
+            <Button variant="outline" size="sm" onClick={onExportReport}>
+              <Download data-icon="inline-start" />
+              Export report
+            </Button>
+          </div>
+        </CardAction>
+      </CardHeader>
+
+      <CardContent className="space-y-6">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div>
+            <h3 className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              What a player gets
+              {comparedTo ? " vs compared" : ""}
+            </h3>
+            <dl className="divide-y divide-border" data-testid="result-metrics">
+              {rows.map((row, i) => {
+                const other = otherRows?.[i];
+                const delta = other ? deltaLabel(row.value, other.value) : null;
+                return (
+                  <div key={row.label} className="py-2">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <dt className="text-[0.8125rem]">{row.label}</dt>
+                      <dd className="tabular flex items-baseline gap-2 text-[0.8125rem]">
+                        {row.value}
+                        {delta ? (
+                          <span
+                            className={cn(
+                              "rounded px-1 py-0.5 text-xs",
+                              delta.tone === "better"
+                                ? "bg-pass/15 text-pass"
+                                : "bg-destructive/15 text-destructive",
+                            )}
+                          >
+                            {delta.text}
+                          </span>
+                        ) : null}
+                      </dd>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{row.note}</p>
+                  </div>
+                );
+              })}
+            </dl>
+          </div>
+
+          <div>
+            <h3 className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              The configuration
+            </h3>
+            <dl className="divide-y divide-border" data-testid="result-config">
+              {configRows(point.config).map((row) => (
+                <div
+                  key={row.label}
+                  className="flex items-baseline justify-between gap-3 py-2"
+                >
+                  <dt className="text-[0.8125rem]">{row.label}</dt>
+                  <dd className="tabular text-[0.8125rem]">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         </div>
-      ) : null}
-    </section>
+
+        {comparedTo ? (
+          <div className="space-y-3 border-t border-border pt-5" data-testid="config-diff">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                What differs between the two
+              </h3>
+              <Button variant="ghost" size="sm" onClick={onClearComparison}>
+                <X data-icon="inline-start" />
+                Clear comparison
+              </Button>
+            </div>
+
+            {configDiff.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                The two configurations are identical. Their results differ only by the
+                seeds they ran on.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Setting</TableHead>
+                      <TableHead>Selected</TableHead>
+                      <TableHead>Compared</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {configDiff.map((row) => (
+                      <TableRow key={row.label}>
+                        <TableHead scope="row" className="font-normal">
+                          {row.label}
+                        </TableHead>
+                        <TableCell className="tabular">{row.left}</TableCell>
+                        <TableCell className="tabular text-data-compared">
+                          {row.right}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Score gaps narrower than {RESOLUTION_FLOOR.toFixed(3)} are inside the
+              run-to-run noise at this seed count, so a difference smaller than that is
+              not a real one.
+            </p>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 };
 

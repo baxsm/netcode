@@ -30,7 +30,10 @@ test("reproduces all three published figures", async ({ page }) => {
 /** The tolerance has to be on screen, or a reader cannot judge what "pass" means. */
 test("states the tolerance the rows are judged against", async ({ page }) => {
   await ready(page);
-  await expect(page.getByTestId("oracle-table")).toContainText("within 2 ms");
+  // the explanation sits under the table rather than inside it, so this asserts on the
+  // panel the two share. what matters is that a reader meets it on the same screen
+  const panel = page.locator('[data-slot="card"]', { hasText: "The published reproduction" });
+  await expect(panel).toContainText("within 2 ms");
 });
 
 test("shows one hash per seed and a different hash across seeds", async ({ page }) => {

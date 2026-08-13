@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type FC } from "react";
+import StatusNote from "./status-note";
 import ConditionControls from "./condition-controls";
 import ConfigStrip from "./config-strip";
 import ReplayView from "./replay-view";
 import TransportControls from "./transport-controls";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+
+import { CANVAS } from "../palette";
 import { COLOURS, VIEWS } from "../replay/draw";
 import {
   advance,
@@ -183,8 +193,8 @@ const ReplayTheatre: FC<ReplayTheatreProps> = ({ pool, config, scenario, script 
     `${value >= 0.01 || value === 0 ? value.toFixed(2) : value.toExponential(1)} units`;
 
   return (
-    <section className="theatre" data-testid="theatre">
-      <div className="views">
+    <section className="space-y-4" data-testid="theatre">
+      <div className="grid gap-5 lg:grid-cols-3">
         {VIEWS.map((view) => (
           <ReplayView
             key={view.glyph}
@@ -197,27 +207,36 @@ const ReplayTheatre: FC<ReplayTheatreProps> = ({ pool, config, scenario, script 
       </div>
 
       {error ? (
-        <p className="state error" role="alert" data-testid="replay-error">
+        <StatusNote tone="error" data-testid="replay-error">
           {error}
-        </p>
+        </StatusNote>
       ) : null}
 
-      <ul className="legend" data-testid="legend">
-        <li>
-          <span className="swatch ring" /> Server state this client had received
+      <ul
+        className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-muted-foreground"
+        data-testid="legend"
+      >
+        <li className="flex items-center gap-1.5">
+          <span
+            className="size-2.5 rounded-full border border-dashed"
+            style={{ borderColor: CANVAS.ghost }}
+          />
+          Server state this client had received
         </li>
-        <li>
-          <span className="swatch" style={{ background: COLOURS.correction }} /> Correction, drawn
-          from where it jumped
-        </li>
-        <li>
-          <span className="swatch" style={{ background: COLOURS.rollback }} /> Rollback, labelled
-          with its depth
-        </li>
-        <li>
-          <span className="swatch" style={{ background: COLOURS.rewind }} /> Rewind target on the
-          server view
-        </li>
+        {[
+          { colour: COLOURS.correction, text: "Correction, drawn from where it jumped" },
+          { colour: COLOURS.rollback, text: "Rollback, labelled with its depth" },
+          { colour: COLOURS.rewind, text: "Rewind target on the server view" },
+        ].map(({ colour, text }) => (
+          <li key={text} className="flex items-center gap-1.5">
+            <span
+              className="size-2.5 rounded-full"
+              style={{ background: colour }}
+              aria-hidden
+            />
+            {text}
+          </li>
+        ))}
       </ul>
 
       <TransportControls
@@ -234,26 +253,77 @@ const ReplayTheatre: FC<ReplayTheatreProps> = ({ pool, config, scenario, script 
         onSeedChange={setSeed}
       />
 
-      <dl className="frame-readout" data-testid="frame-readout">
-        <div>
-          <dt>Correction</dt>
-          <dd>{owner ? units(owner.correctionMagnitude) : "-"}</dd>
-        </div>
-        <div>
-          <dt>Rollback depth</dt>
-          <dd>{owner ? `${owner.rollbackDepth} ticks` : "-"}</dd>
-        </div>
-        <div>
-          <dt>Client A behind server</dt>
-          <dd>
-            {frame && owner
-              ? units(Math.hypot(frame.server.x - owner.position.x, frame.server.y - owner.position.y))
-              : "-"}
-          </dd>
-        </div>
+      {/**
+       * What this tick cost, read straight off the frame.
+       *
+       * These three change every tick while playing, so each value is tabular and sits
+       * in a fixed column. The label is small and the number carries the weight,
+       * because the number is what is being watched.
+       */}
+      <dl className="grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3" data-testid="frame-readout">
+        {/**
+         * The numbers are not tinted with the event colours.
+         *
+         * The canvas already carries those: a correction is the only red on screen and
+         * a rollback the only violet. Repeating them here spent two more colours on a
+         * value that is already labelled, and at text size a red number sat close
+         * enough to the interactive accent to read as something clickable. A dot ties
+         * the row to its colour on the canvas without colouring the figure.
+         */}
+        {[
+          {
+            term: "Correction",
+            value: owner ? units(owner.correctionMagnitude) : "-",
+            dot: owner && owner.correctionMagnitude > 0 ? COLOURS.correction : null,
+          },
+          {
+            term: "Rollback depth",
+            value: owner ? `${owner.rollbackDepth} ticks` : "-",
+            dot: owner && owner.rollbackDepth > 0 ? COLOURS.rollback : null,
+          },
+          {
+            term: "Client A behind server",
+            value:
+              frame && owner
+                ? units(
+                    Math.hypot(
+                      frame.server.x - owner.position.x,
+                      frame.server.y - owner.position.y,
+                    ),
+                  )
+                : "-",
+            dot: null,
+          },
+        ].map(({ term, value, dot }) => (
+          <div key={term} className="bg-card px-3.5 py-2.5">
+            <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              {/* the slot is always there, so a row does not shift when an event
+                  starts or stops happening */}
+              <span
+                className="size-1.5 shrink-0 rounded-full"
+                style={{ background: dot ?? "transparent" }}
+                aria-hidden
+              />
+              {term}
+            </dt>
+            <dd className="tabular mt-0.5 pl-3 text-lg">{value}</dd>
+          </div>
+        ))}
       </dl>
 
-      <ConditionControls segment={segment} disabled={loading} onChange={setSegment} />
+      <Card>
+        <CardHeader>
+          <CardTitle>Link</CardTitle>
+          <CardDescription>
+            Applied live. Every change re-runs from the same seed, so what changes on
+            screen is the condition and not a different roll.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ConditionControls segment={segment} disabled={loading} onChange={setSegment} />
+        </CardContent>
+      </Card>
+
       <ConfigStrip config={config} firesShots={script.some((e) => e.action === "fire")} />
     </section>
   );

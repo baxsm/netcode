@@ -1,1382 +1,206 @@
-:root {
-  --bg: #0d1117;
-  --panel: #151b23;
-  /* one step above --panel, for controls that sit on a panel and must still read as
-     raised rather than as a hole cut in it */
-  --raised: #1c2330;
-  --line: #262d38;
-  /* the boundary of anything you can click. --line is a divider between static things
-     and sits at 1.25:1 on a panel, well under the 3:1 a control boundary needs to be
-     identifiable. this clears 3:1 against every surface a control sits on, the
-     lightest of which is --raised at 3.06 */
-  --line-control: #626e84;
-  --line-strong: #8593a8;
-  --text: #e6edf3;
-  --muted: #8b949e;
-  --accent: #58a6ff;
-  --accent-bright: #79b8ff;
-  --warn: #f0883e;
-  --pass: #3fb950;
-  --danger: #f85149;
-
-  /* two durations rather than a scale. one for a control answering the pointer, one
-     for something arriving on screen. more values than that would be a scale nobody
-     applies consistently */
-  --t-quick: 120ms;
-  --t-enter: 220ms;
-  --ease: cubic-bezier(0.2, 0, 0.2, 1);
-
-  color-scheme: dark;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-main {
-  max-width: 60rem;
-  margin: 0 auto;
-  padding: 2rem 1.25rem 4rem;
-}
-
-/* the rule spans the viewport while its contents stay on the page's column, so the
-   bar reads as chrome rather than as a panel that stops short of the edge */
-.top-bar {
-  border-bottom: 1px solid var(--line);
-}
-
-.top-bar-inner {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem 1.5rem;
-  flex-wrap: wrap;
-  max-width: 60rem;
-  margin: 0 auto;
-  padding: 0.9rem 1.25rem;
-}
-
-.wordmark {
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  margin-right: 0.25rem;
-}
-
-.top-bar ul {
-  display: flex;
-  gap: 0.25rem;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  flex: 1 1 auto;
-}
-
-.top-bar a {
-  display: block;
-  padding: 0.3rem 0.7rem;
-  border-radius: 6px;
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 0.875rem;
-  transition:
-    color var(--t-quick) var(--ease),
-    background-color var(--t-quick) var(--ease);
-}
-
-.top-bar a:hover {
-  color: var(--text);
-  background: var(--panel);
-}
-
-.top-bar a[aria-current="page"] {
-  color: var(--text);
-  background: var(--panel);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-
-.top-bar a:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  letter-spacing: -0.01em;
-}
-
-header p {
-  margin: 0.5rem 0 0;
-  color: var(--muted);
-  max-width: 46rem;
-}
-
-.controls {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin: 1.75rem 0 1rem;
-}
-
-/* the primary action. one per surface, so the eye lands on the thing the page is for */
-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  background: var(--accent);
-  color: #04101f;
-  border: 0;
-  border-radius: 6px;
-  padding: 0.5rem 1rem;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background-color var(--t-quick) var(--ease),
-    transform var(--t-quick) var(--ease),
-    opacity var(--t-quick) var(--ease);
-}
-
-button:hover:not(:disabled) {
-  background: var(--accent-bright);
-}
-
-/* the press is a 1px drop rather than a scale. a scale on a wide button visibly moves
-   its edges, which reads as the layout shifting rather than as the button going down */
-button:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-button:disabled {
-  background: var(--line);
-  color: var(--muted);
-  cursor: not-allowed;
-}
-
-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.icon {
-  flex-shrink: 0;
-}
-
-code {
-  color: var(--muted);
-  font-size: 0.8125rem;
-  font-family: ui-monospace, "Cascadia Code", monospace;
-}
-
-.state {
-  color: var(--muted);
-  margin: 0 0 1rem;
-}
-
-.state.error {
-  color: var(--warn);
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-}
-
-caption {
-  text-align: left;
-  color: var(--muted);
-  font-size: 0.8125rem;
-  padding-bottom: 0.5rem;
-}
-
-th,
-td {
-  text-align: right;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--line);
-  white-space: nowrap;
-}
-
-thead th {
-  color: var(--muted);
-  font-weight: 500;
-  font-size: 0.8125rem;
-}
-
-/* the network column is a label, not a number, so it and its header both sit left
-   while every measured column stays right-aligned for digit comparison */
-thead th:first-child,
-th[scope="row"] {
-  text-align: left;
-  font-weight: 500;
-  width: 12rem;
-}
-
-tbody tr:last-child th,
-tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-h2 {
-  margin: 0;
-  font-size: 1rem;
-  letter-spacing: -0.005em;
-}
-
-.panel {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 1.25rem;
-  margin: 1.75rem 0 0;
-  background: var(--panel);
-}
-
-.panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.panel-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-/* the secondary action. it carries a fill and a boundary that clears 3:1 against the
-   panel, because a control identified only by its border has to be identifiable */
-button.ghost {
-  background: var(--raised);
-  color: var(--text);
-  border: 1px solid var(--line-control);
-  font-weight: 500;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.8125rem;
-}
-
-button.ghost:hover:not(:disabled) {
-  border-color: var(--line-strong);
-  background: color-mix(in srgb, var(--raised) 70%, var(--text) 8%);
-}
-
-button.ghost:disabled {
-  background: transparent;
-  border-color: var(--line);
-  color: var(--muted);
-}
-
-/* the third tier, for an action that has to be present without competing: clearing a
-   comparison, cancelling a recording. no fill and no border until the pointer arrives */
-button.quiet {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  background: transparent;
-  color: var(--muted);
-  border: 1px solid transparent;
-  font-weight: 500;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.8125rem;
-}
-
-button.quiet:hover:not(:disabled) {
-  color: var(--text);
-  background: var(--raised);
-  border-color: var(--line-control);
-}
-
-button.quiet:disabled {
-  color: var(--line-strong);
-}
-
-.toggles {
-  list-style: none;
-  margin: 0 0 1.25rem;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-  gap: 0.4rem 1rem;
-}
-
-.toggles label {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  cursor: pointer;
-  padding: 0.25rem 0;
-}
-
-.toggles input {
-  accent-color: var(--accent);
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.knobs {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 1rem 1.5rem;
-  border-top: 1px solid var(--line);
-  padding-top: 1.25rem;
-}
-
-.knob label {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
-  cursor: pointer;
-  margin-bottom: 0.35rem;
-}
-
-.knob-value {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.knob input[type="range"] {
-  width: 100%;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-/* a constant whose technique is off still crosses the boundary, it just has
-   nothing to act on, so it is dimmed rather than hidden */
-.knob.inactive {
-  opacity: 0.45;
-}
-
-.knob-note {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--muted);
-  margin-top: 0.2rem;
-}
-
-.table-wrap {
-  overflow-x: auto;
-}
-
-footer {
-  margin-top: 2rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
-}
-
-td .value {
-  display: block;
-  font-variant-numeric: tabular-nums;
-}
-
-td .change {
-  display: block;
-  font-size: 0.75rem;
-  margin-top: 0.1rem;
-}
-
-.change.better {
-  color: #3fb950;
-}
-
-.change.worse {
-  color: var(--warn);
-}
-
-.change.flat {
-  color: var(--muted);
-}
-
-.note {
-  margin-top: 1.25rem;
-  color: var(--muted);
-  font-size: 0.875rem;
-  max-width: 46rem;
-}
-
-.section-heading {
-  margin: 3rem 0 0.5rem;
-  padding-top: 2rem;
-  border-top: 1px solid var(--line);
-  font-size: 1rem;
-}
-
-.theatre {
-  margin-top: 1.75rem;
-}
-
-.views {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
-}
-
-.view {
-  margin: 0;
-  min-width: 0;
-}
-
-.view figcaption {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
-  color: var(--muted);
-  margin-bottom: 0.4rem;
-}
-
-.view-glyph {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.15rem;
-  height: 1.15rem;
-  border-radius: 4px;
-  color: #04101f;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-/* matches the world aspect in draw.ts, so the canvas needs no letterbox at any width */
-.view canvas {
-  display: block;
-  width: 100%;
-  aspect-ratio: 8 / 3;
-  background: #0a0f16;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-
-.legend {
-  display: flex;
-  gap: 0.4rem 1.25rem;
-  flex-wrap: wrap;
-  list-style: none;
-  margin: 0.75rem 0 0;
-  padding: 0;
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-.legend li {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-/* inline-block rather than relying on a flex parent, so the same swatch reads inside
-   a table cell as well as in the legend */
-.swatch {
-  display: inline-block;
-  vertical-align: middle;
-  margin-right: 0.4rem;
-  width: 0.6rem;
-  height: 0.6rem;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-/* the legend lays swatches out itself, so it does not want the inline spacing */
-.legend .swatch {
-  margin-right: 0;
-}
-
-/* the ghost is hollow on the canvas, so its swatch is too */
-.swatch.ring {
-  border: 1px dashed var(--muted);
-}
-
-.transport {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem 1rem;
-  flex-wrap: wrap;
-  margin-top: 1rem;
-}
-
-.transport-buttons {
-  display: flex;
-  gap: 0.5rem;
-  flex-shrink: 0;
-}
-
-.scrub {
-  flex: 1 1 14rem;
-  min-width: 0;
-  display: flex;
-}
-
-.scrub input {
-  width: 100%;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-.transport-readout {
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.seed-field {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8125rem;
-  color: var(--muted);
-  flex-shrink: 0;
-}
-
-.seed-field input {
-  width: 5.5rem;
-  background: var(--bg);
-  border: 1px solid var(--line-control);
-  border-radius: 6px;
-  color: var(--text);
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  padding: 0.3rem 0.5rem;
-  transition: border-color var(--t-quick) var(--ease);
-}
-
-.seed-field input:hover:not(:disabled) {
-  border-color: var(--line-strong);
-}
-
-.seed-field input:focus-visible,
-.scrub input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.frame-readout {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: 0.75rem 1.5rem;
-  margin: 1.25rem 0 0;
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
-}
-
-.frame-readout div {
-  min-width: 0;
-}
-
-.frame-readout dt {
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-/* these three change every tick and are the numbers the views are watched for, so they
-   are set larger than body text rather than the same size as the labels around them */
-.frame-readout dd {
-  margin: 0.15rem 0 0;
-  font-size: 1.0625rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.conditions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 1rem 1.5rem;
-  align-items: end;
-  margin-top: 1.5rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--line);
-}
-
-.burst {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  font-size: 0.8125rem;
-  cursor: pointer;
-  padding-bottom: 0.35rem;
-}
-
-.burst input {
-  accent-color: var(--accent);
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-/* the active configuration, as a surface rather than as loose text under a rule. it is
-   the answer to "what produced what I am watching", so it reads as a thing */
-.config-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem 1.5rem;
-  flex-wrap: wrap;
-  margin-top: 1.25rem;
-  padding: 0.7rem 0.85rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  font-size: 0.75rem;
-}
-
-.strip-techniques,
-.strip-constants {
-  display: flex;
-  gap: 0.4rem 0.5rem;
-  flex-wrap: wrap;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-/* a technique reads as on or off from its own fill, so the set can be scanned without
-   comparing each label against its neighbours */
-.strip-techniques li {
-  padding: 0.1rem 0.45rem;
-  border-radius: 4px;
-  background: var(--raised);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-
-.strip-techniques li.off {
-  color: var(--muted);
-  background: transparent;
-  box-shadow: inset 0 0 0 1px transparent;
-  text-decoration: line-through;
-}
-
-.strip-constants {
-  gap: 0.4rem 1rem;
-}
-
-.strip-constants li {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.sweep-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 1.25rem 1.5rem;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  min-width: 0;
-}
-
-.field label {
-  font-size: 0.8125rem;
-  color: var(--muted);
-}
-
-.field select {
-  background: var(--bg);
-  border: 1px solid var(--line-control);
-  border-radius: 6px;
-  color: var(--text);
-  font: inherit;
-  font-size: 0.875rem;
-  padding: 0.4rem 0.55rem;
-  cursor: pointer;
-  width: 100%;
-  transition:
-    border-color var(--t-quick) var(--ease),
-    background-color var(--t-quick) var(--ease);
-}
-
-.field select:hover:not(:disabled) {
-  border-color: var(--line-strong);
-}
-
-.field select:disabled {
-  color: var(--muted);
-  cursor: not-allowed;
-}
-
-.field select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.field-note {
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-.segment-list {
-  list-style: none;
-  margin: 1.5rem 0 0;
-  padding: 1.25rem 0 0;
-  border-top: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-/* full width so the share bar behind each row is measured against the same box on
-   every row. sized to content, a 5% bar could end up wider than a 25% one */
-.segment-list li {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  width: 100%;
-  font-size: 0.8125rem;
-  padding: 0.3rem 0.5rem;
-  border-radius: 5px;
-  overflow: hidden;
-}
-
-/* the bar is the share of the population, drawn behind the row rather than as a
-   separate chart, so weight and conditions read as one line */
-.segment-share {
-  position: absolute;
-  inset: 0 auto 0 0;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border-radius: 5px;
-}
-
-.segment-weight {
-  position: relative;
-  font-variant-numeric: tabular-nums;
-  width: 3rem;
-  flex-shrink: 0;
-}
-
-.segment-conditions {
-  position: relative;
-  color: var(--muted);
-  min-width: 0;
-}
-
-.sweep-run {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem 1rem;
-  flex-wrap: wrap;
-  margin-top: 1.5rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--line);
-}
-
-.note.coverage {
-  margin-top: 0.75rem;
-  max-width: none;
-}
-
-.chart {
-  margin: 0 0 0.5rem;
-  /* recharts measures its parent, so the container needs a width it can read */
-  width: 100%;
-  min-width: 0;
-}
-
-.chart-tooltip {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.75rem;
-  max-width: 15rem;
-}
-
-.chart-tooltip strong {
-  display: block;
-  margin-bottom: 0.4rem;
-  font-size: 0.8125rem;
-}
-
-.chart-tooltip dl {
-  margin: 0;
-  display: grid;
-  gap: 0.15rem 0.75rem;
-}
-
-.chart-tooltip dl div {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.chart-tooltip dt {
-  color: var(--muted);
-}
-
-.chart-tooltip dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.chart-tooltip-hint {
-  display: block;
-  margin-top: 0.5rem;
-  padding-top: 0.4rem;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-}
-
-.result-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
-  gap: 1.5rem 2rem;
-}
-
-.sub-heading {
-  margin: 0 0 0.75rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--muted);
-}
-
-.metric-list,
-.config-list {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-
-.metric-list div,
-.config-list div {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0 1rem;
-  align-items: baseline;
-  padding-bottom: 0.65rem;
-  border-bottom: 1px solid var(--line);
-}
-
-.metric-list div:last-child,
-.config-list div:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
-}
-
-.metric-list dt,
-.config-list dt {
-  font-size: 0.875rem;
-}
-
-.metric-list dd,
-.config-list dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  justify-content: flex-end;
-}
-
-.metric-note {
-  grid-column: 1 / -1;
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-.config-list dd {
-  color: var(--muted);
-}
-
-.diff {
-  margin-top: 1.75rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--line);
-}
-
-.diff .panel-head {
-  margin-bottom: 0.75rem;
-}
-
-/* text and number inputs match the selects they sit beside, so a row of controls
-   reads as one set rather than as two different widgets */
-.field input[type="text"],
-.field input[type="number"],
-table input[type="text"],
-table input[type="number"] {
-  background: var(--bg);
-  border: 1px solid var(--line-control);
-  border-radius: 6px;
-  color: var(--text);
-  font: inherit;
-  font-size: 0.875rem;
-  font-variant-numeric: tabular-nums;
-  padding: 0.4rem 0.55rem;
-  width: 100%;
-  transition: border-color var(--t-quick) var(--ease);
-}
-
-.field input[type="text"]:hover:not(:disabled),
-.field input[type="number"]:hover:not(:disabled),
-table input[type="text"]:hover:not(:disabled),
-table input[type="number"]:hover:not(:disabled) {
-  border-color: var(--line-strong);
-}
-
-/* right-aligned to match the header above it, so a column of digits lines up under
-   its own label rather than drifting away from it */
-table input[type="number"] {
-  width: 6rem;
-  text-align: right;
-}
-
-/* a column of inputs is as wide as the input, not as the cell, so the header sits
-   over the field rather than over the padding beside it */
-.script-table thead th,
-.profile-table thead th {
-  text-align: center;
-}
-
-.script-table thead th:first-child,
-.script-table th.slack,
-.profile-table thead th:first-child,
-.profile-table th[scope="row"] {
-  text-align: left;
-}
-
-/* the script has four narrow columns, and stretched to full width they sit far
-   enough apart that a row stops reading as one input. sized to content instead, with
-   the last column taking the slack */
-.script-table table {
-  width: auto;
-  min-width: 28rem;
-}
-
-/* the slack goes to a trailing spacer column rather than to the last data column,
-   which would otherwise be pushed to the far edge away from the row it belongs to */
-.script-table th.slack,
-.script-table td.slack {
-  width: 100%;
-  text-align: left;
-}
-
-table select {
-  background: var(--bg);
-  border: 1px solid var(--line-control);
-  border-radius: 6px;
-  color: var(--text);
-  font: inherit;
-  font-size: 0.875rem;
-  padding: 0.35rem 0.5rem;
-  cursor: pointer;
-  transition: border-color var(--t-quick) var(--ease);
-}
-
-table select:hover:not(:disabled) {
-  border-color: var(--line-strong);
-}
-
-table input[type="checkbox"] {
-  accent-color: var(--accent);
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-}
-
-/* a read-only built-in must not look editable. dimming the text alone left a field
-   that still read as a box waiting for input, so the fill goes flat as well.
-
-   listed against the same selectors that set the enabled border rather than as a bare
-   `input:disabled`, because those are two class-and-element selectors and would
-   otherwise win on specificity and hand every read-only field a live control border.
-   an inactive control is also exempt from the 3:1 boundary rule, so the faint line
-   here is the correct end state rather than a contrast miss */
-input:disabled,
-table select:disabled,
-.field select:disabled,
-.field input[type="text"]:disabled,
-.field input[type="number"]:disabled,
-table input[type="text"]:disabled,
-table input[type="number"]:disabled {
-  color: var(--muted);
-  background: transparent;
-  border-color: color-mix(in srgb, var(--line) 60%, transparent);
-  cursor: not-allowed;
-}
-
-input:focus-visible,
-table select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-/* a label beside its control rather than above it, for the pickers that sit in a
-   row of buttons */
-.field.inline {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.6rem;
-  flex: 0 1 auto;
-}
-
-.field.inline select {
-  width: auto;
-  min-width: 12rem;
-}
-
-/* the population as one bar. a distribution is the input that decides which
-   configuration wins, and a column of numbers does not show its shape */
-.stacked-bar {
-  display: flex;
-  height: 0.6rem;
-  border-radius: 3px;
-  overflow: hidden;
-  margin: 1.25rem 0;
-  background: var(--line);
-}
-
-.stacked-bar span {
-  min-width: 2px;
-}
-
-.problems {
-  list-style: none;
-  margin: 1.25rem 0 0;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--warn);
-  border-radius: 8px;
-  color: var(--warn);
-  font-size: 0.8125rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.recording {
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  margin-bottom: 1.25rem;
-  font-size: 0.8125rem;
-}
-
-/* the stop control while a recording is live. it keeps the secondary button's size so
-   the row does not reflow when it changes, and takes the accent fill so it reads as
-   the one action that matters while keys are being captured */
-button.recording-stop {
-  background: var(--accent);
-  color: #04101f;
-  border: 1px solid var(--accent);
-  font-weight: 600;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.8125rem;
-}
-
-button.recording-stop:hover:not(:disabled) {
-  background: var(--accent-bright);
-  border-color: var(--accent-bright);
-}
-
-.recording p {
-  margin: 0 0 0.5rem;
-}
-
-.recording ul {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.25rem;
-  margin: 0;
-  padding: 0;
-  color: var(--muted);
-}
-
-kbd {
-  font-family: ui-monospace, "Cascadia Code", monospace;
-  font-size: 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 0.05rem 0.3rem;
-  color: var(--text);
-}
-
-.tabular {
-  font-variant-numeric: tabular-nums;
-}
-
-/* reachable by a screen reader and by the button that clicks it, but never drawn.
-   `display: none` would take it out of the accessibility tree as well */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
-
-/* the word carries the result and the colour reinforces it, never the reverse. a
-   pass read only from green would be invisible to a reader who cannot see it */
-.verdict {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.verdict.pass {
-  color: #3fb950;
-}
-
-.verdict.fail {
-  color: var(--warn);
-}
-
-/* the condition each oracle row describes, under its label rather than in its own
-   column, since it is prose and every other column is a number */
-.row-note {
-  display: block;
-  font-weight: 400;
-  font-size: 0.75rem;
-  color: var(--muted);
-  white-space: normal;
-  margin-top: 0.15rem;
-}
-
-th[scope="row"]:has(.row-note) {
-  width: 16rem;
-}
-
-.demo-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* separated by a rule rather than by nesting each demo in its own bordered box,
-   which would be a card inside a panel */
-.demo-list li {
-  padding: 1.25rem 0;
-  border-top: 1px solid var(--line);
-}
-
-.demo-list li:last-child {
-  padding-bottom: 0;
-}
-
-.demo-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.5rem;
-}
-
-.demo-head h3 {
-  margin: 0;
-  font-size: 0.9375rem;
-  font-weight: 600;
-}
-
-.demo-list p {
-  margin: 0 0 0.5rem;
-  max-width: 46rem;
-  font-size: 0.875rem;
-}
-
-.demo-numbers {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: 0.75rem 1.5rem;
-  margin: 1rem 0;
-  padding: 0.9rem 0;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-}
-
-.demo-numbers div {
-  min-width: 0;
-}
-
-.demo-numbers dt {
-  font-size: 0.75rem;
-  color: var(--muted);
-  margin-bottom: 0.2rem;
-}
-
-.demo-numbers dd {
-  margin: 0;
-  font-size: 0.9375rem;
-}
-
-/* the whole viewport, since this replaces the app rather than sitting over it */
-.too-narrow {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 2rem 1.5rem;
-  max-width: 32rem;
-  margin: 0 auto;
-}
-
-.too-narrow .wordmark {
-  margin: 0 0 2rem;
-  color: var(--muted);
-}
-
-.too-narrow h1 {
-  margin-bottom: 0.75rem;
-}
-
-.too-narrow p:last-child {
-  margin: 0;
-  color: var(--muted);
-}
-
-/* Motion.
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+
+    /* the surface a control sits on, one step above a card, so a control never reads
+       as a hole cut into the panel behind it */
+    --color-raised: var(--raised);
+
+    /* entity identity. these are the simulation's own colours and they are reserved:
+       nothing in the chrome may use them, or a client would read as a button */
+    --color-server: var(--server);
+    --color-client-a: var(--client-a);
+    --color-client-b: var(--client-b);
+    --color-correction: var(--correction);
+    --color-rollback: var(--rollback);
+    --color-rewind: var(--rewind);
+
+    /* verdict, distinct from both the interactive accent and the entity set */
+    --color-pass: var(--pass);
+    --color-warn: var(--warn);
+
+    /* data encoding on charts, deliberately not the interactive accent. a point on the
+       pareto front is not a thing you can click merely because it is coloured */
+    --color-data-front: var(--data-front);
+    --color-data-dominated: var(--data-dominated);
+    --color-data-selected: var(--data-selected);
+    --color-data-compared: var(--data-compared);
+
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+/**
+ * One theme. `docs/ui.md` ships dark only, so the tokens are declared once on :root
+ * and `.dark` is not a second palette to keep in sync.
  *
- * Chrome only. The simulation is the content, so the canvas is never animated from
- * here: it already moves, and easing it would misreport the motion being measured.
+ * The roles are kept apart on purpose. The previous stylesheet had a single --accent
+ * doing four jobs at once: button fill, focus ring, the population-share bar and the
+ * pareto front colour. Colour then told the reader nothing about what was clickable.
+ */
+:root,
+.dark {
+    --background: oklch(0.17 0.012 258);
+    --foreground: oklch(0.94 0.008 250);
+
+    --card: oklch(0.21 0.014 258);
+    --card-foreground: var(--foreground);
+    --popover: oklch(0.24 0.015 258);
+    --popover-foreground: var(--foreground);
+    --raised: oklch(0.26 0.016 258);
+
+    /* the interactive accent, and the only thing that carries it.
+       every other hue in this app is already spoken for: cyan and yellow are the two
+       clients, red is corrections and failures, violet is rollbacks, orange is rewind,
+       blue is chart data and green is a passing verdict. pink is what is left, and it
+       sits at least 95 from all of them, so "you can act on this" can never be read as
+       a client, an event or a result. guarded by _tests/palette.test.ts */
+    --primary: oklch(0.72 0.19 340);
+    --primary-foreground: oklch(0.17 0.02 340);
+
+    --secondary: oklch(0.28 0.016 258);
+    --secondary-foreground: var(--foreground);
+    --muted: oklch(0.27 0.014 258);
+    --muted-foreground: oklch(0.68 0.014 254);
+    --accent: oklch(0.30 0.018 258);
+    --accent-foreground: var(--foreground);
+
+    --destructive: oklch(0.65 0.19 25);
+    --border: oklch(0.32 0.016 258);
+    /* a control boundary has to be identifiable, which needs far more contrast than a
+       divider between two static things. solved for against --raised, the lightest
+       surface a control sits on */
+    --input: oklch(0.46 0.018 258);
+    --ring: oklch(0.72 0.19 340);
+
+    --server: oklch(0.93 0.005 250);
+    --client-a: oklch(0.78 0.13 190);
+    --client-b: oklch(0.80 0.14 78);
+    --correction: oklch(0.65 0.20 25);
+    --rollback: oklch(0.70 0.16 300);
+    --rewind: oklch(0.74 0.15 55);
+
+    --pass: oklch(0.72 0.17 150);
+    --warn: oklch(0.75 0.15 65);
+
+    --data-front: oklch(0.72 0.13 220);
+    --data-dominated: oklch(0.44 0.015 258);
+    --data-selected: oklch(0.95 0.005 250);
+    --data-compared: oklch(0.74 0.15 55);
+
+    --radius: 0.5rem;
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+
+    /**
+     * Tailwind v4 resets buttons to `cursor: default`, matching the native platform.
+     *
+     * On the web a control that does not change the cursor reads as inert, which is
+     * exactly the "which of these can I click" problem this rebuild exists to fix. The
+     * pointer is restored on everything interactive, and `not(:disabled)` keeps a
+     * disabled control honest rather than inviting a click it will ignore.
+     */
+    button:not(:disabled),
+    [role="button"]:not(:disabled),
+    [role="switch"]:not([data-disabled]),
+    [role="checkbox"]:not([data-disabled]),
+    label:has(input:not(:disabled)),
+    summary,
+    a[href] {
+        cursor: pointer;
+    }
+
+    button:disabled,
+    [role="button"]:disabled,
+    [data-disabled] {
+        cursor: not-allowed;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+        font-feature-settings: "cv11", "ss01";
+    }
+
+    /* the top bar is sticky, so anything scrolled to would otherwise land underneath
+       it: out of reach of both a click and the reader */
+    html {
+        scroll-padding-top: 5rem;
+    }
+
+    :where(svg [tabindex], [data-slot="card"], h1, h2) {
+        scroll-margin-top: 5rem;
+    }
+
+    /* every number that updates in place, so digits do not jitter between frames */
+    .tabular {
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+/**
+ * Motion.
  *
- * Two jobs only. Something arriving on screen settles into place so it does not appear
- * as a jump cut, and a result that could have gone either way lands so the verdict
- * registers. Anything beyond that competes with the views. */
-
-/* No entry animation here touches opacity, and that is a correctness rule rather than
- * a taste one.
+ * Two rules hold here and both are guarded by `src/_tests/motion.test.ts`:
  *
- * Chrome freezes the animation clock in a tab that is not in front, and an animation
- * whose clock never starts holds its element on the first keyframe. Every fill mode
- * behaves this way, `none` and `backwards` and `both` alike, so `from { opacity: 0 }`
- * renders the element invisible for as long as the tab stays in the background. Loading
- * the app in a background tab showed a blank page, which is how this file had it.
- *
- * A keyframe that moves only the transform has no such failure: the element keeps its
- * resting opacity, and a frozen clock costs a 4px offset on a page nobody is looking
- * at yet. So entries here translate and scale, and never fade. */
+ * 1. An entry animation never starts below full opacity. Chrome freezes the animation
+ *    clock in a background tab, and an element whose clock never starts holds its first
+ *    keyframe, so `from { opacity: 0 }` renders a blank page until the tab is focused.
+ *    This shipped once. Entry motion translates instead.
+ * 2. Reduced motion stops the chrome but never the simulation, which is the content.
+ */
+@layer utilities {
+    @keyframes enter-rise {
+        from {
+            transform: translateY(6px);
+        }
+        to {
+            transform: translateY(0);
+        }
+    }
 
-@keyframes rise {
-  from {
-    transform: translateY(4px);
-  }
-}
-
-/* a result panel is the answer to a run that took a moment, so it arrives rather than
-   appears. the distance is small on purpose: this is a settle, not an entrance */
-.panel,
-.state,
-.demo-numbers {
-  animation: rise var(--t-enter) var(--ease);
-}
-
-/* the verdict is the one thing on `/verify` a reader is waiting for, so it lands
-   rather than appears with the row */
-@keyframes verdict-land {
-  from {
-    transform: scale(0.94);
-  }
-}
-
-.verdict {
-  animation: verdict-land var(--t-enter) var(--ease);
-}
-
-/* a running sweep is the one place the interface should look alive, because the only
-   other evidence it is working is a number that changes every few hundred ms */
-@keyframes pulse {
-  50% {
-    opacity: 0.55;
-  }
-}
-
-[data-testid="sweep-progress"],
-[data-testid="progress"] {
-  animation: pulse 1.4s var(--ease) infinite;
-}
-
-/* the run glyph turns while its run is in flight, which is the one place a spinner
-   earns its place: a sweep can take seconds and the button is otherwise inert */
-@keyframes spin {
-  to {
-    transform: rotate(1turn);
-  }
-}
-
-.icon.spin {
-  animation: spin 900ms linear infinite;
+    .animate-enter {
+        animation: enter-rise 220ms cubic-bezier(0.2, 0, 0.2, 1);
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-  }
-}
-
-@media (max-width: 60rem) {
-  .views {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 40rem) {
-  main {
-    padding: 1.5rem 1rem 3rem;
-  }
-
-  .panel {
-    padding: 1rem;
-  }
-
-  .panel-head {
-    flex-wrap: wrap;
-  }
-
-  /* the wrapper is the only scroller. making the table itself scroll as well
-     would nest two of them, and the outer one would then never overflow */
-  table {
-    min-width: 34rem;
-  }
-
-  /* the row label column is fixed at 12rem on desktop for digit alignment, which
-     is most of a phone screen. narrower here so the numbers stay on screen */
-  thead th:first-child,
-  th[scope="row"] {
-    width: auto;
-    min-width: 7rem;
-  }
+    *:not(.sim-canvas) {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
 }

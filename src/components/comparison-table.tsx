@@ -1,4 +1,20 @@
 import type { FC } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import type { Comparison } from "../workers/pool";
 import { SEGMENT_PRESETS, type Metrics, type ScenarioSpec } from "../sim/types";
 
@@ -81,56 +97,94 @@ function changeLabel(baseline: number, configured: number, lowerIsBetter: boolea
   };
 }
 
+/** How a change reads: green when the techniques helped, red when they cost. */
+const TONES: Record<string, string> = {
+  better: "text-pass",
+  worse: "text-destructive",
+  flat: "text-muted-foreground",
+};
+
 const ComparisonTable: FC<ComparisonTableProps> = ({ rows, scenario, seed }) => (
-  <div className="table-wrap">
-    <table data-testid="results">
-      <caption>
+  <Card>
+    <CardHeader>
+      <CardTitle>Run comparison</CardTitle>
+      <CardDescription>
         Seed {String(seed)}, {scenario.durationTicks} ticks at {scenario.tickRate} Hz.
-        Each cell shows the compensated run, with its change against the same run with
-        no compensation.
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">Network</th>
-          {COLUMNS.map(({ label }) => (
-            <th scope="col" key={label}>
-              {label}
-            </th>
-          ))}
-          <th scope="col">Packets lost</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map(({ segmentIndex, baseline, configured }) => (
-          <tr key={segmentIndex}>
-            <th scope="row">{SEGMENT_PRESETS[segmentIndex]}</th>
-            {COLUMNS.map(({ label, read, format, lowerIsBetter, context }) => {
-              const after = read(configured);
-              if (context) {
-                return (
-                  <td key={label}>
-                    <span className="value">{format(after)}</span>
-                    <span className="change flat">both runs</span>
-                  </td>
-                );
-              }
-              const change = changeLabel(read(baseline), after, lowerIsBetter);
-              return (
-                <td key={label}>
-                  <span className="value">{format(after)}</span>
-                  <span className={`change ${change.tone}`}>{change.text}</span>
-                </td>
-              );
-            })}
-            <td>
-              <span className="value">{configured.packetsDropped}</span>
-              <span className="change flat">of {configured.packetsSent}</span>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
+        Each cell is the compensated run, with its change against the same run with no
+        compensation. Distances are in world units.
+      </CardDescription>
+    </CardHeader>
+
+    <CardContent>
+      <div className="overflow-x-auto">
+        <Table data-testid="results">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Network</TableHead>
+              {COLUMNS.map(({ label }) => (
+                <TableHead key={label} className="text-right">
+                  {label}
+                </TableHead>
+              ))}
+              <TableHead className="text-right">Packets lost</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map(({ segmentIndex, baseline, configured }) => (
+              <TableRow key={segmentIndex}>
+                <TableHead scope="row" className="font-normal whitespace-nowrap">
+                  {SEGMENT_PRESETS[segmentIndex]}
+                </TableHead>
+                {COLUMNS.map(({ label, read, format, lowerIsBetter, context }) => {
+                  const after = read(configured);
+                  /**
+                   * A context column is identical in both runs by construction, so it
+                   * carries no change. It used to print the words "both runs" in every
+                   * one of its cells, which read as data and filled a column with prose.
+                   */
+                  if (context) {
+                    return (
+                      <TableCell key={label} className="tabular text-right">
+                        {format(after)}
+                      </TableCell>
+                    );
+                  }
+                  const change = changeLabel(read(baseline), after, lowerIsBetter);
+                  return (
+                    <TableCell key={label} className="text-right">
+                      <span className="tabular block text-sm" data-testid="cell-value">
+                        {format(after)}
+                      </span>
+                      <span
+                        data-testid="cell-change"
+                        className={cn(
+                          "tabular mt-0.5 block text-xs",
+                          TONES[change.tone] ?? "text-muted-foreground",
+                        )}
+                      >
+                        {change.text}
+                      </span>
+                    </TableCell>
+                  );
+                })}
+                <TableCell className="text-right">
+                  <span className="tabular block text-sm" data-testid="cell-value">
+                    {configured.packetsDropped}
+                  </span>
+                  <span
+                    className="tabular mt-0.5 block text-xs text-muted-foreground"
+                    data-testid="cell-change"
+                  >
+                    of {configured.packetsSent} sent
+                  </span>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </CardContent>
+  </Card>
 );
 
 export default ComparisonTable;

@@ -1,5 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FC } from "react";
+import { Circle, Plus, Square, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ACTION_LABELS,
   INPUT_ACTIONS,
@@ -127,158 +155,213 @@ const InputScriptEditor: FC<InputScriptEditorProps> = ({
   const seconds = durationTicks / Math.max(tickRate, 1);
 
   return (
-    <section className="panel" aria-labelledby="script-heading">
-      <div className="panel-head">
-        <h2 id="script-heading">Input script</h2>
+    <Card aria-labelledby="script-heading">
+      <CardHeader>
+        <CardTitle id="script-heading">Input script</CardTitle>
+        <CardDescription>
+          What the body is told to do, written at simulation ticks so it replays the
+          same way at any frame rate.
+        </CardDescription>
         {readOnly ? null : (
-          <div className="panel-actions">
-            <button
-              type="button"
-              className="ghost"
-              data-testid="add-input"
-              onClick={() =>
-                onChange([
-                  ...script,
-                  {
-                    tick: nextTick(script, durationTicks),
-                    action: "move",
-                    dxPermille: 1000,
-                    dyPermille: 0,
-                  },
-                ])
-              }
-            >
-              Add input
-            </button>
-            {/* while recording this is the only thing worth clicking, and every
-                keystroke is being written, so it stops reading as one option among
-                several */}
-            <button
-              type="button"
-              className={recording ? "recording-stop" : "ghost"}
-              data-testid="record"
-              aria-pressed={recording}
-              onClick={() => (recording ? stop() : setRecording(true))}
-            >
-              {recording ? "Stop recording" : "Record"}
-            </button>
+          <CardAction>
+            <div className="flex gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="add-input"
+                onClick={() =>
+                  onChange([
+                    ...script,
+                    {
+                      tick: nextTick(script, durationTicks),
+                      action: "move",
+                      dxPermille: 1000,
+                      dyPermille: 0,
+                    },
+                  ])
+                }
+              >
+                <Plus data-icon="inline-start" />
+                Add input
+              </Button>
+              {/* while recording this is the only thing worth clicking, and every
+                  keystroke is being written, so it stops reading as one option among
+                  several. fixed width because the label swaps between "Record" and
+                  "Stop recording", which is an eight character difference */}
+              <Button
+                variant={recording ? "default" : "outline"}
+                size="sm"
+                className="w-[8.25rem]"
+                data-testid="record"
+                aria-pressed={recording}
+                onClick={() => (recording ? stop() : setRecording(true))}
+              >
+                {recording ? (
+                  <Square className="fill-current" data-icon="inline-start" />
+                ) : (
+                  <Circle className="fill-current" data-icon="inline-start" />
+                )}
+                {recording ? "Stop recording" : "Record"}
+              </Button>
+            </div>
+          </CardAction>
+        )}
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {recording ? (
+          <div
+            className="space-y-2 rounded-lg border border-primary/50 bg-primary/5 px-3 py-2.5"
+            data-testid="recording"
+            role="status"
+          >
+            <p className="flex items-center gap-2 text-sm">
+              <span className="relative flex size-2">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
+                <span className="relative inline-flex size-2 rounded-full bg-primary" />
+              </span>
+              Recording tick <span className="tabular">{recordTick}</span> of{" "}
+              {durationTicks}.
+            </p>
+            <ul className="flex flex-wrap gap-x-4 gap-y-1">
+              {CONTROL_HINTS.map((hint) => (
+                <li
+                  key={hint.keys}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                >
+                  <kbd className="rounded border border-border bg-raised px-1.5 py-0.5 font-mono text-[0.6875rem] text-foreground">
+                    {hint.keys}
+                  </kbd>
+                  to {hint.does}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {script.length === 0 ? (
+          <p className="text-sm text-muted-foreground" data-testid="script-empty">
+            No inputs. The body stays still for the whole run.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableCaption className="mt-0 mb-2 text-left">
+                {script.length} {script.length === 1 ? "input" : "inputs"} over{" "}
+                {durationTicks} ticks, {seconds.toFixed(1)} seconds at {tickRate} Hz.
+              </TableCaption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-28">Tick</TableHead>
+                  <TableHead className="w-36">Action</TableHead>
+                  <TableHead className="w-28">x</TableHead>
+                  <TableHead className="w-28">y</TableHead>
+                  {/* absorbs the remaining width so the data columns stay together */}
+                  <TableHead>
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {script.map((event, index) => (
+                  // index is the identity here on purpose: rows carry no id, and two
+                  // events can legitimately share a tick and an action while being
+                  // edited, so a composite key would collide mid-edit
+                  <TableRow key={index} data-testid="script-row">
+                    <TableCell>
+                      <Input
+                        type="number"
+                        className="tabular h-7 w-20"
+                        aria-label={`Input ${index + 1} tick`}
+                        value={event.tick}
+                        min={0}
+                        max={Math.max(0, durationTicks - 1)}
+                        disabled={readOnly}
+                        onChange={(e) =>
+                          update(index, { tick: Math.trunc(Number(e.target.value)) })
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={event.action}
+                        disabled={readOnly}
+                        onValueChange={(v) => {
+                          if (typeof v === "string") {
+                            update(index, { action: v as InputActionKind });
+                          }
+                        }}
+                      >
+                        <SelectTrigger
+                          size="sm"
+                          className="w-28"
+                          aria-label={`Input ${index + 1} action`}
+                        >
+                          <SelectValue>{() => ACTION_LABELS[event.action]}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {INPUT_ACTIONS.map((action) => (
+                            <SelectItem key={action} value={action}>
+                              {ACTION_LABELS[action]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    {(["dxPermille", "dyPermille"] as const).map((axis) => (
+                      <TableCell key={axis}>
+                        <Input
+                          type="number"
+                          className="tabular h-7 w-20"
+                          aria-label={`Input ${index + 1} ${axis === "dxPermille" ? "x" : "y"}`}
+                          value={event[axis]}
+                          min={-1000}
+                          max={1000}
+                          step={100}
+                          // a stop reads neither component, so editing them would
+                          // change a number the run never looks at
+                          disabled={readOnly || event.action === "stop"}
+                          onChange={(e) =>
+                            update(index, { [axis]: Math.trunc(Number(e.target.value)) })
+                          }
+                        />
+                      </TableCell>
+                    ))}
+                    <TableCell>
+                      {readOnly ? null : (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={`Remove input ${index + 1}`}
+                                onClick={() =>
+                                  onChange(script.filter((_, i) => i !== index))
+                                }
+                              >
+                                <Trash2 />
+                              </Button>
+                            }
+                          />
+                          <TooltipContent>Remove this input</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         )}
-      </div>
 
-      {recording ? (
-        <div className="recording" data-testid="recording" role="status">
-          <p>
-            Recording tick <span className="tabular">{recordTick}</span> of {durationTicks}.
-            Inputs are written at simulation ticks, so the script replays the same way at
-            any frame rate.
-          </p>
-          <ul>
-            {CONTROL_HINTS.map((hint) => (
-              <li key={hint.keys}>
-                <kbd>{hint.keys}</kbd> to {hint.does}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {script.length === 0 ? (
-        <p className="state" data-testid="script-empty">
-          No inputs. The body stays still for the whole run.
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Directions are permille, so 1000 is full deflection along that axis. A stop
+          holds the body still until the next input, and the last input holds until the
+          run ends.
         </p>
-      ) : (
-        <div className="table-wrap script-table">
-          <table>
-            <caption>
-              {script.length} {script.length === 1 ? "input" : "inputs"} over {durationTicks}{" "}
-              ticks, {seconds.toFixed(1)} seconds at {tickRate} Hz.
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Tick</th>
-                <th scope="col">Action</th>
-                <th scope="col">x</th>
-                <th scope="col">y</th>
-                {/* absorbs the remaining width so the data columns stay together */}
-                <th scope="col" className="slack">
-                  {""}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {script.map((event, index) => (
-                // index is the identity here on purpose: rows carry no id, and two
-                // events can legitimately share a tick and an action while being
-                // edited, so a composite key would collide mid-edit
-                <tr key={index} data-testid="script-row">
-                  <td>
-                    <input
-                      type="number"
-                      aria-label={`Input ${index + 1} tick`}
-                      value={event.tick}
-                      min={0}
-                      max={Math.max(0, durationTicks - 1)}
-                      disabled={readOnly}
-                      onChange={(e) => update(index, { tick: Math.trunc(Number(e.target.value)) })}
-                    />
-                  </td>
-                  <td>
-                    <select
-                      aria-label={`Input ${index + 1} action`}
-                      value={event.action}
-                      disabled={readOnly}
-                      onChange={(e) =>
-                        update(index, { action: e.target.value as InputActionKind })
-                      }
-                    >
-                      {INPUT_ACTIONS.map((action) => (
-                        <option key={action} value={action}>
-                          {ACTION_LABELS[action]}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  {(["dxPermille", "dyPermille"] as const).map((axis) => (
-                    <td key={axis}>
-                      <input
-                        type="number"
-                        aria-label={`Input ${index + 1} ${axis === "dxPermille" ? "x" : "y"}`}
-                        value={event[axis]}
-                        min={-1000}
-                        max={1000}
-                        step={100}
-                        // a stop reads neither component, so editing them would
-                        // change a number the run never looks at
-                        disabled={readOnly || event.action === "stop"}
-                        onChange={(e) => update(index, { [axis]: Math.trunc(Number(e.target.value)) })}
-                      />
-                    </td>
-                  ))}
-                  <td className="slack">
-                    {readOnly ? null : (
-                      <button
-                        type="button"
-                        className="ghost"
-                        aria-label={`Remove input ${index + 1}`}
-                        onClick={() => onChange(script.filter((_, i) => i !== index))}
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <p className="note">
-        Directions are permille, so 1000 is full deflection along that axis. A stop holds
-        the body still until the next input, and the last input holds until the run ends.
-      </p>
-    </section>
+      </CardContent>
+    </Card>
   );
 };
 

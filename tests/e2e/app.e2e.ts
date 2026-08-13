@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { setSwitch } from "./controls";
 import { SEGMENT_PRESETS } from "../../src/sim/types";
 
 /**
@@ -34,7 +35,7 @@ test("shows worse divergence on hostile than on lan", async ({ page }) => {
 
   const cell = async (preset: string, column: number) => {
     const row = page.locator("tbody tr", { hasText: preset }).first();
-    const text = await row.locator("td").nth(column).locator(".value").innerText();
+    const text = await row.locator("td").nth(column).getByTestId("cell-value").innerText();
     return Number.parseFloat(text);
   };
 
@@ -47,9 +48,9 @@ test("never reports more packets lost than sent", async ({ page }) => {
   const rows = page.getByTestId("results").locator("tbody tr");
   for (let i = 0; i < (await rows.count()); i += 1) {
     const cell = rows.nth(i).locator("td").nth(4);
-    const lost = Number.parseInt(await cell.locator(".value").innerText(), 10);
+    const lost = Number.parseInt(await cell.getByTestId("cell-value").innerText(), 10);
     const sent = Number.parseInt(
-      (await cell.locator(".change").innerText()).replace(/\D/g, ""),
+      (await cell.getByTestId("cell-change").innerText()).replace(/\D/g, ""),
       10,
     );
     expect(lost).toBeLessThanOrEqual(sent);
@@ -124,7 +125,7 @@ test("rejects a configuration the core cannot run", async ({ page }) => {
 
   // reconciliation with no prediction has no unacknowledged inputs to replay, so
   // the run must be refused rather than quietly reporting the baseline
-  await page.getByRole("checkbox", { name: "Client prediction" }).uncheck();
+  await setSwitch(page.getByRole("switch", { name: "Client prediction" }), false);
   await page.getByRole("button", { name: "Run comparison" }).click();
 
   const message = page.getByTestId("invalid");
@@ -169,7 +170,11 @@ test.describe("at the narrow end of the supported range", () => {
     await ready(page);
 
     const layout = await page.evaluate(() => {
-      const wraps = [...document.querySelectorAll<HTMLElement>(".table-wrap")];
+      // every table's own scroll container, found from the table rather than by class
+      // name, so this keeps holding if the wrapper's styling changes again
+      const wraps = [...document.querySelectorAll("table")]
+        .map((t) => t.parentElement)
+        .filter((el): el is HTMLElement => el !== null);
       return {
         bodyOverflows: document.body.scrollWidth > document.documentElement.clientWidth,
         wrapCount: wraps.length,
@@ -187,7 +192,7 @@ test.describe("at the narrow end of the supported range", () => {
   test("the technique controls stay usable", async ({ page }) => {
     await ready(page);
 
-    const box = await page.getByRole("checkbox", { name: "Client prediction" }).boundingBox();
+    const box = await page.getByRole("switch", { name: "Client prediction" }).boundingBox();
     expect(box, "the first toggle must be on screen").not.toBeNull();
     expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
     expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(760);

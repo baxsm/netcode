@@ -1,4 +1,5 @@
 import type { FC } from "react";
+import { MonitorX } from "lucide-react";
 
 /**
  * The message shown below tablet width.
@@ -12,10 +13,16 @@ import type { FC } from "react";
  * not also mounted and running a simulation nobody can see.
  */
 const TooNarrow: FC = () => (
-  <div className="too-narrow" data-testid="too-narrow">
-    <p className="wordmark">netcode</p>
-    <h1>This needs a wider window</h1>
-    <p>
+  <div
+    className="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-4 px-6 text-center"
+    data-testid="too-narrow"
+  >
+    <span className="text-sm font-semibold tracking-tight">netcode</span>
+    <MonitorX className="size-8 text-muted-foreground/60" aria-hidden />
+    <h1 className="font-heading text-xl font-semibold tracking-tight">
+      This needs a wider window
+    </h1>
+    <p className="text-sm leading-relaxed text-muted-foreground">
       The replay puts the server and two clients side by side, and the sweep plots a
       front you pick points off. Both need room to be read. Open this at 700 pixels or
       wider.

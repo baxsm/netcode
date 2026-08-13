@@ -20,17 +20,27 @@ const tickOf = async (page: Page): Promise<number> => {
   return Number.parseInt(text.replace(/^tick /, ""), 10);
 };
 
+/**
+ * Drives a slider to an exact value.
+ *
+ * The slider is a composed widget now, so the test id is on its wrapper rather than on
+ * an input. It still owns a real `input[type=range]` underneath, which is what both a
+ * screen reader and this helper address.
+ */
 const setRange = async (page: Page, testId: string, value: number) => {
-  await page.getByTestId(testId).evaluate((el, v) => {
-    const input = el as HTMLInputElement;
-    const setter = Object.getOwnPropertyDescriptor(
-      Object.getPrototypeOf(input),
-      "value",
-    )?.set;
-    setter?.call(input, String(v));
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  }, value);
+  await page
+    .getByTestId(testId)
+    .locator('input[type="range"]')
+    .evaluate((el, v) => {
+      const input = el as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(
+        Object.getPrototypeOf(input),
+        "value",
+      )?.set;
+      setter?.call(input, String(v));
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }, value);
 };
 
 /** The landing route must open already running, not waiting to be configured. */
@@ -41,9 +51,18 @@ test("opens with a simulation already playing", async ({ page }) => {
   // the button reads Pause only while it is playing, which it must be on arrival
   await expect(page.getByTestId("play")).toHaveText("Pause", { timeout: 30_000 });
 
+  /**
+   * Polled until the tick moves rather than sampled after a fixed wait.
+   *
+   * Playback advances on `requestAnimationFrame`, and the suite runs several browsers
+   * at once on the same cores, so a saturated machine can deliver no frames at all
+   * inside a 400 ms window. That failed intermittently while the page was working
+   * correctly. What is being asserted is that it advances, not how fast.
+   */
   const first = await tickOf(page);
-  await page.waitForTimeout(400);
-  expect(await tickOf(page)).toBeGreaterThan(first);
+  await expect(async () => {
+    expect(await tickOf(page)).toBeGreaterThan(first);
+  }).toPass({ timeout: 15_000 });
 });
 
 test("renders all three views", async ({ page }) => {

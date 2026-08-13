@@ -1,5 +1,6 @@
 import { useEffect, useRef, type FC } from "react";
-import { drawView, resize, type View } from "../replay/draw";
+import { CANVAS } from "../palette";
+import { drawView, resize, VIEW_HEIGHT, VIEW_WIDTH, type View } from "../replay/draw";
 import type { Cursor } from "../replay/playback";
 import type { Frame } from "../sim/types";
 
@@ -39,15 +40,35 @@ const ReplayView: FC<ReplayViewProps> = ({ frames, cursor, view, trailTicks }) =
   }, [frames, cursor, view, trailTicks]);
 
   return (
-    <figure className="view">
-      <figcaption>
-        <span className="view-glyph" style={{ background: view.colour }} aria-hidden="true">
+    <figure className="flex min-w-0 flex-col gap-2">
+      <figcaption className="flex items-center gap-2">
+        <span
+          className="flex size-5 items-center justify-center rounded font-mono text-[0.6875rem] font-semibold"
+          style={{ background: view.colour, color: CANVAS.glyphInk }}
+          aria-hidden="true"
+        >
           {view.glyph}
         </span>
-        {view.title}
+        <span className="text-[0.8125rem] font-medium">{view.title}</span>
       </figcaption>
+      {/**
+       * The aspect ratio has to come from CSS, not from the canvas attributes.
+       *
+       * A canvas with no CSS height falls back to sizing from its own backing store,
+       * which `resize` sets from the observed box: the observer then reports a new
+       * size, which resizes the backing store, which fires the observer again. That
+       * loop is what "ResizeObserver loop completed with undelivered notifications"
+       * means, and it fired on every frame until this was pinned.
+       *
+       * `sim-canvas` is what the reduced-motion rule spares: the simulation is the
+       * content, so it keeps moving when the chrome stops. See styles.css.
+       */}
       <canvas
         ref={canvasRef}
+        className="sim-canvas block w-full rounded-lg border border-border bg-background"
+        // taken from the world constants rather than written as a literal, so the box
+        // and the projection inside it can never disagree about the shape
+        style={{ aspectRatio: `${VIEW_WIDTH} / ${VIEW_HEIGHT}` }}
         data-testid={`view-${view.glyph}`}
         role="img"
         aria-label={`${view.title}, tick ${cursor.tick}`}

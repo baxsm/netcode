@@ -9,6 +9,7 @@
  * exists to show.
  */
 
+import { CANVAS, ENTITY } from "../palette";
 import type { ClientFrame, Frame, Point } from "../sim/types";
 import { flashAt, lerp, type Cursor } from "./playback";
 
@@ -17,21 +18,14 @@ import { flashAt, lerp, type Cursor } from "./playback";
  * rollback the only violet, which is what lets a glance identify an event without a
  * legend lookup.
  *
- * The two clients are cyan and amber rather than blue and green. Blue is the colour of
- * every link and control in the chrome, so a blue entity read as interactive, and green
- * is the passing verdict on `/verify`. Cyan against amber also separates under
- * deuteranopia and protanopia, which blue against green does not, and entity identity
- * is carried by colour here.
+ * The values live in `src/palette.ts` because the legends, the chart and this canvas
+ * all have to name the same colours, and four hand-typed copies of the same hex is
+ * what let the tune page's legend describe colours the chart had stopped using.
  */
 export const COLOURS = {
-  server: "#c9d1d9",
-  clientA: "#2dd4bf",
-  clientB: "#f0b429",
-  correction: "#f85149",
-  rollback: "#bc8cff",
-  rewind: "#f0883e",
-  grid: "#1c2430",
-  ghost: "#8b949e",
+  ...ENTITY,
+  grid: CANVAS.grid,
+  ghost: CANVAS.ghost,
 } as const;
 
 /** How long an event stays visible, in ticks. See `flashAt`. */
@@ -203,7 +197,7 @@ function drawBody(
   ctx.fill();
 
   // the label rides the body so identity never depends on colour alone
-  ctx.fillStyle = "#04101f";
+  ctx.fillStyle = CANVAS.glyphInk;
   ctx.font = `600 ${Math.round(radius * 1.1)}px ui-sans-serif, system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";

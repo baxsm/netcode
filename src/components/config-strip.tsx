@@ -1,4 +1,8 @@
 import type { FC } from "react";
+import { Check, Minus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import {
   TECHNIQUE_FIELDS,
   TECHNIQUE_LABELS,
@@ -42,20 +46,45 @@ const CONSTANTS: Array<{
  * shorter list.
  */
 const ConfigStrip: FC<ConfigStripProps> = ({ config, firesShots }) => (
-  <div className="config-strip" data-testid="config-strip">
-    <ul className="strip-techniques">
-      {TECHNIQUE_FIELDS.map((field: TechniqueField) => (
-        <li key={field} className={config.techniques[field] ? "on" : "off"}>
-          {TECHNIQUE_LABELS[field]}
-        </li>
-      ))}
+  <div
+    className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-lg border border-border bg-card px-3.5 py-3"
+    data-testid="config-strip"
+  >
+    <ul className="flex flex-wrap items-center gap-1.5">
+      {TECHNIQUE_FIELDS.map((field: TechniqueField) => {
+        const on = config.techniques[field];
+        return (
+          <li key={field}>
+            <Badge
+              variant={on ? "secondary" : "outline"}
+              className={cn(
+                "gap-1.5 font-normal",
+                on ? "text-foreground" : "text-muted-foreground/70",
+              )}
+            >
+              {on ? (
+                <Check className="size-3 text-pass" aria-hidden />
+              ) : (
+                <Minus className="size-3 opacity-60" aria-hidden />
+              )}
+              {TECHNIQUE_LABELS[field]}
+              <span className="sr-only">{on ? " on" : " off"}</span>
+            </Badge>
+          </li>
+        );
+      })}
     </ul>
-    <ul className="strip-constants">
-      {CONSTANTS.filter(({ needsShots }) => !needsShots || firesShots).map(({ label, read }) => (
-        <li key={label}>
-          <span className="muted">{label}</span> {read(config)}
-        </li>
-      ))}
+
+    <Separator orientation="vertical" className="hidden h-5 lg:block" />
+
+    <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+      {CONSTANTS.filter(({ needsShots }) => !needsShots || firesShots).map(
+        ({ label, read }) => (
+          <li key={label} className="text-xs text-muted-foreground">
+            {label} <span className="tabular text-foreground">{read(config)}</span>
+          </li>
+        ),
+      )}
     </ul>
   </div>
 );

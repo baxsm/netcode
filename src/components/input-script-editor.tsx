@@ -150,9 +150,12 @@ const InputScriptEditor: FC<InputScriptEditorProps> = ({
             >
               Add input
             </button>
+            {/* while recording this is the only thing worth clicking, and every
+                keystroke is being written, so it stops reading as one option among
+                several */}
             <button
               type="button"
-              className="ghost"
+              className={recording ? "recording-stop" : "ghost"}
               data-testid="record"
               aria-pressed={recording}
               onClick={() => (recording ? stop() : setRecording(true))}

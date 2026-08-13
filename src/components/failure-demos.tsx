@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FC } from "react";
 import type { SimPool } from "../workers/pool";
 import { useNavigate } from "../router";
@@ -40,7 +40,14 @@ const FailureDemos: FC<FailureDemosProps> = ({ pool }) => {
   const [running, setRunning] = useState(true);
   const [error, setError] = useState("");
 
-  const run = useCallback(async () => {
+  /**
+   * False once this mount has been torn down. See `determinism-panel.tsx`: six
+   * simulations outlive a route change, and a discarded mount's run must not write
+   * over the result the visible one is waiting for.
+   */
+  const live = useRef(true);
+
+  const run = useCallback(async (alive: () => boolean = () => true) => {
     setRunning(true);
     setError("");
     try {
@@ -55,16 +62,22 @@ const FailureDemos: FC<FailureDemosProps> = ({ pool }) => {
           return { demo, broken: broken[demo.metric], fixed: fixed[demo.metric] };
         }),
       );
+      if (!alive()) return;
       setRows(measured);
       setRunning(false);
     } catch (cause) {
+      if (!alive()) return;
       setError(cause instanceof Error ? cause.message : String(cause));
       setRunning(false);
     }
   }, [pool, scenarioFor]);
 
   useEffect(() => {
-    void run();
+    live.current = true;
+    void run(() => live.current);
+    return () => {
+      live.current = false;
+    };
   }, [run]);
 
   return (

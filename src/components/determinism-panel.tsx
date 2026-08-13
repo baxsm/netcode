@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FC } from "react";
 import type { SimPool } from "../workers/pool";
 import { BUILT_IN_SCENARIOS } from "../scenarios/store";
@@ -36,7 +36,17 @@ const DeterminismPanel: FC<DeterminismPanelProps> = ({ pool, coreVersion }) => {
   const [running, setRunning] = useState(true);
   const [error, setError] = useState("");
 
-  const check = useCallback(async () => {
+  /**
+   * False once this mount has been torn down.
+   *
+   * A check is ten simulations, so it easily outlives a route change or the StrictMode
+   * remount that starts a second one. Without this, the run belonging to the mount
+   * that was discarded still writes its result, and the panel shows whichever finished
+   * last rather than the one the visible mount asked for.
+   */
+  const live = useRef(true);
+
+  const check = useCallback(async (alive: () => boolean = () => true) => {
     setRunning(true);
     setError("");
     try {
@@ -62,16 +72,22 @@ const DeterminismPanel: FC<DeterminismPanelProps> = ({ pool, coreVersion }) => {
           ),
         })),
       );
+      if (!alive()) return;
       setResults(measured);
       setRunning(false);
     } catch (cause) {
+      if (!alive()) return;
       setError(cause instanceof Error ? cause.message : String(cause));
       setRunning(false);
     }
   }, [pool]);
 
   useEffect(() => {
-    void check();
+    live.current = true;
+    void check(() => live.current);
+    return () => {
+      live.current = false;
+    };
   }, [check]);
 
   const stable = results.every((r) => new Set(r.hashes).size === 1);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FC } from "react";
 import DeterminismPanel from "../components/determinism-panel";
 import FailureDemos from "../components/failure-demos";
@@ -25,7 +25,14 @@ const VerifyPage: FC<VerifyPageProps> = ({ pool, coreVersion }) => {
   const [status, setStatus] = useState<Status>("running");
   const [error, setError] = useState("");
 
-  const measure = useCallback(async () => {
+  /**
+   * False once this mount has been torn down. See `determinism-panel.tsx`: a
+   * discarded mount's measurement must not write over the one the visible mount is
+   * waiting for.
+   */
+  const live = useRef(true);
+
+  const measure = useCallback(async (alive: () => boolean = () => true) => {
     setStatus("running");
     setError("");
     try {
@@ -35,16 +42,22 @@ const VerifyPage: FC<VerifyPageProps> = ({ pool, coreVersion }) => {
           active.peekersAdvantage(point.rttMs, point.tickRate, point.clientFps),
         ),
       );
+      if (!alive()) return;
       setRows(ORACLE_POINTS.map((point, i) => judge(point, measured[i] ?? 0)));
       setStatus("done");
     } catch (cause) {
+      if (!alive()) return;
       setError(cause instanceof Error ? cause.message : String(cause));
       setStatus("failed");
     }
   }, [pool]);
 
   useEffect(() => {
-    void measure();
+    live.current = true;
+    void measure(() => live.current);
+    return () => {
+      live.current = false;
+    };
   }, [measure]);
 
   return (

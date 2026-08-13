@@ -36,23 +36,21 @@ export default function App() {
   const wideEnough = useWideEnough();
 
   /**
-   * Created on demand rather than during render.
+   * Created on demand rather than during render, and kept for the life of the page.
    *
-   * StrictMode mounts, unmounts and remounts in development, so a pool built during
-   * render is disposed by the first cleanup and then reused dead by the second pass,
-   * which surfaces as "Proxy has been released". Building it here means the remount
-   * gets a live pool.
+   * It is deliberately not disposed on unmount. React runs child effects before the
+   * parent's cleanup, so a StrictMode remount has the panels starting work against
+   * the pool *before* this component tears the same pool down underneath them. The
+   * calls then reject with "Proxy has been released" and `/verify` renders two red
+   * errors next to results that arrived fine, which is a teardown artifact reported
+   * as a failed check.
+   *
+   * `App` unmounts only when the page goes away, and the browser reclaims the workers
+   * then regardless, so there is nothing left for a cleanup to buy.
    */
   const poolFor = useCallback((): SimPool => {
     if (!poolRef.current) poolRef.current = new SimPool();
     return poolRef.current;
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      poolRef.current?.dispose();
-      poolRef.current = null;
-    };
   }, []);
 
   useEffect(() => {

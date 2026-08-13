@@ -114,12 +114,18 @@ test.describe("baselines", () => {
   /**
    * Captured after every check has settled, since the point of the page is the
    * verdicts rather than the layout that holds them.
+   *
+   * A verdict appears as soon as its own section resolves, and the three sections
+   * measure independently, so waiting on the verdicts alone can capture while another
+   * section is still a one-line "running" state. Waiting for every loading state to be
+   * gone is the condition that actually means idle.
    */
   test("the verification page", async ({ page }) => {
     await page.goto("/#/verify");
     await expect(page.getByTestId("oracle-verdict")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("determinism-verdict")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("demo-list")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('[data-testid$="-loading"]')).toHaveCount(0, { timeout: 60_000 });
     await expect(page).toHaveScreenshot("verify.png", { fullPage: true });
   });
 });

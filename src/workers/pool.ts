@@ -382,10 +382,16 @@ export class SimPool {
   }
 
   /**
-   * Terminates every worker. A pool that is not disposed keeps its threads alive.
+   * Terminates every worker and releases their proxies.
    *
-   * Safe to call twice: StrictMode runs cleanup on every mount in development, and
-   * releasing an already-released proxy throws.
+   * The app does not call this. Its pool lives for the whole page, and disposing it
+   * on unmount is what put "Proxy has been released" on `/verify`, since React runs
+   * child effects before the parent cleanup that would tear the pool down. See
+   * `app.tsx`. It stays because a pool that owns threads should be able to give them
+   * back, and because the tests need to prove it does.
+   *
+   * Safe to call twice: releasing an already-released proxy throws, so the slot list
+   * is emptied before anything is released.
    */
   dispose(): void {
     const slots = this.slots;
